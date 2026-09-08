@@ -4,6 +4,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// Доступы SEO-модуля лежат в seo/.env (в git его нет). pm2 такие файлы сам не
+// читает, поэтому подхватываем до подключения панели — иначе она поднимется
+// без пароля и просто скажет «выключена».
+loadEnv(path.join(__dirname, 'seo', '.env'));
+
 const admin = require('./seo/admin');
 
 const ROOT = path.join(__dirname, 'mirror');
@@ -11,6 +16,16 @@ const PAGES = path.join(ROOT, 'sasha-lab.ru');
 const DIST = path.join(__dirname, 'dist');   // база знаний, собирается content/build.js
 const PORT = Number(process.env.PORT || 3060);
 const HOST = process.env.HOST || '127.0.0.1';
+
+function loadEnv(file) {
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const v = m[2].trim().replace(/^["']|["']$/g, '');
+    if (v && !process.env[m[1]]) process.env[m[1]] = v;
+  }
+}
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
