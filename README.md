@@ -73,3 +73,29 @@ ssh -i /root/.ssh/ru_key root@10.10.0.2 'pm2 restart sasha-lab'
 Не «curl / == 200», а полная выборка ассетов: для каждой из 5 страниц выдернуть все
 `src|href|data-original="/…"` и убедиться, что каждая ссылка отдаёт 200
 (на 08.09.2026: 182 ссылки, битых 0), плюс скриншот главной.
+
+## SEO-контур (08.09.2026)
+
+Разбор задачи «держать первую строчку» и критика исходного плана — в
+[SEO-PLAN.md](SEO-PLAN.md). Коротко про код:
+
+- `seo/` — модуль работы с поисковиками. Панель собственника на `/seo` под
+  паролем (`SEO_ADMIN_PASSWORD`), командная строка `node seo/cli.js`.
+  Источники: Wordstat и Search API Яндекса (`YANDEX_SEARCH_API_KEY`,
+  `YANDEX_FOLDER_ID`), Яндекс.Вебмастер (`YANDEX_WEBMASTER_TOKEN`),
+  Google Search Console (`GSC_KEY_FILE`). Образец окружения — `seo/.env.example`,
+  сам `seo/.env` в репозиторий не коммитится.
+- `content/kb/*.md` + `node content/build.js` → `dist/` — статическая база
+  знаний: страницы вопросов и обзоров с разметкой FAQPage/Article/LocalBusiness,
+  перелинковкой, `sitemap-baza.xml` и картой покрытия `coverage.json`.
+  Битая внутренняя ссылка роняет сборку.
+- `server.js` отдаёт `/baza/` из `dist/`, монтирует панель и **закрывает всё
+  зеркало от индексации** (`robots.txt` + `X-Robots-Tag: noindex`): копия
+  клиентского сайта не должна конкурировать с оригиналом.
+
+Сборка базы знаний обязательна после `git pull` на сервере — `dist/` в git не
+хранится:
+
+```bash
+node content/build.js && pm2 restart sasha-lab --update-env
+```

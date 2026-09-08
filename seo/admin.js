@@ -1,0 +1,189 @@
+// Панель собственника: /seo — вход по паролю, дальше сводка по спросу,
+// позициям и незакрытым запросам. Монтируется в server.js как обработчик.
+//
+// Пароль — SEO_ADMIN_PASSWORD в окружении. Сессия — подписанная HMAC кука,
+// без хранилища: панель читающая, состояние держать не за чем.
+const crypto = require('crypto');
+const jobs = require('./lib/jobs');
+const store = require('./lib/store');
+
+const COOKIE = 'sasha_seo';
+const TTL = 14 * 24 * 3600 * 1000;
+
+function secret() {
+  return process.env.SEO_SESSION_SECRET || process.env.SEO_ADMIN_PASSWORD || '';
+}
+
+function sign(exp) {
+  return `${exp}.${crypto.createHmac('sha256', secret()).update(String(exp)).digest('hex')}`;
+}
+
+function valid(token) {
+  if (!token || !secret()) return false;
+  const [exp, mac] = String(token).split('.');
+  if (!exp || !mac || Number(exp) < Date.now()) return false;
+  const want = crypto.createHmac('sha256', secret()).update(exp).digest('hex');
+  return want.length === mac.length && crypto.timingSafeEqual(Buffer.from(want), Buffer.from(mac));
+}
+
+function passwordOk(given) {
+  const want = process.env.SEO_ADMIN_PASSWORD || '';
+  if (!want) return false;
+  const a = Buffer.from(crypto.createHash('sha256').update(String(given)).digest('hex'));
+  const b = Buffer.from(crypto.createHash('sha256').update(want).digest('hex'));
+  return crypto.timingSafeEqual(a, b);
+}
+
+const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';')
+  .map((c) => c.trim().split('=')).filter((p) => p[0]).map(([k, ...v]) => [k, v.join('=')]));
+
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    const c = [];
+    req.on('data', (d) => { c.push(d); if (Buffer.concat(c).length > 1e5) req.destroy(); });
+    req.on('end', () => resolve(Object.fromEntries(new URLSearchParams(Buffer.concat(c).toString('utf8')))));
+  });
+}
+
+const shell = (title, body) => `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>${esc(title)}</title><style>
+body{margin:0;background:#131313;color:#ededed;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:28px 20px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 10px}
+.sub{color:#9a9a9a;margin:0 0 24px}
+.tiles{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 8px}
+.tile{background:#1a1a1a;border:1px solid #2b2b2b;border-radius:10px;padding:14px 18px;min-width:120px}
+.tile b{display:block;font-size:26px;font-weight:600}
+.tile span{color:#9a9a9a;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #222}
+th{color:#9a9a9a;font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.top3{color:#7ed08a}.top10{color:#e0c96a}.miss{color:#9a9a9a}
+form.login{max-width:320px;margin:12vh auto}
+input,button{font:inherit;padding:11px 14px;border-radius:8px;border:1px solid #2b2b2b;background:#1a1a1a;color:#ededed;width:100%}
+button{background:#78a0ec;color:#0f0f0f;font-weight:700;border:0;cursor:pointer;margin-top:10px}
+.err{color:#e08080}
+.act{display:inline-block;width:auto;margin-right:8px}
+form.inline{display:inline}
+</style></head><body><div class="wrap">${body}</div></body></html>`;
+
+function loginPage(err) {
+  return shell('Вход · SEO', `<form class="login" method="POST" action="/seo/login">
+  <h1>SEO-панель</h1><p class="sub">Доступ владельца сайта</p>
+  ${err ? `<p class="err">${esc(err)}</p>` : ''}
+  <input type="password" name="password" placeholder="Пароль" autofocus autocomplete="current-password">
+  <button type="submit">Войти</button></form>`);
+}
+
+function dashboard(msg) {
+  const s = jobs.summary();
+  const pos = store.positions.latest().sort((a, b) => (a.pos || 999) - (b.pos || 999));
+  const gaps = jobs.gaps({ limit: 40 });
+  const kw = Object.values(store.keywords.all())
+    .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0)).slice(0, 40);
+  const cls = (p) => !p ? 'miss' : p <= 3 ? 'top3' : p <= 10 ? 'top10' : '';
+
+  const tiles = [
+    ['фраз в базе', s.keywords], ['страниц базы знаний', s.pages],
+    ['в топ-3', s.top3], ['в топ-10', s.top10], ['в топ-30', s.top30],
+    ['не найден', s.notFound], ['спрос без страницы', s.gaps],
+  ].map(([n, v]) => `<div class="tile"><b>${v}</b><span>${n}</span></div>`).join('');
+
+  return shell('SEO · sasha-lab', `
+<h1>SEO · ${esc(jobs.DOMAIN)}</h1>
+<p class="sub">Спрос — из Wordstat, позиции — из Search API Яндекса, факт показов — из Вебмастера и Search Console.
+${s.updated ? `Последнее обновление: ${esc(s.updated)}.` : 'Данные ещё не собирались.'}</p>
+${msg ? `<p class="err">${esc(msg)}</p>` : ''}
+<div class="tiles">${tiles}</div>
+<p>
+  <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="wordstat"><button class="act">Собрать частотность</button></form>
+  <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="positions"><button class="act">Снять позиции</button></form>
+  <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="webmaster"><button class="act">Из Вебмастера</button></form>
+  <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="gsc"><button class="act">Из Search Console</button></form>
+</p>
+
+<h2>Позиции</h2>
+${pos.length ? `<table><tr><th>Запрос</th><th class="num">Позиция</th><th>Страница</th><th class="num">Снято</th></tr>
+${pos.map((p) => `<tr><td>${esc(p.phrase)}</td><td class="num ${cls(p.pos)}">${p.pos || '—'}</td>
+<td>${p.url ? `<a href="${esc(p.url)}">${esc(p.url.replace(/^https?:\/\/[^/]+/, '')) || '/'}</a>` : ''}</td>
+<td class="num">${esc(p.date)}</td></tr>`).join('')}</table>` : '<p class="sub">Позиции ещё не снимались.</p>'}
+
+<h2>Спрос без страницы</h2>
+${gaps.length ? `<table><tr><th>Запрос</th><th class="num">Частота</th><th>Источник</th></tr>
+${gaps.map((g) => `<tr><td>${esc(g.phrase)}</td><td class="num">${g.count || g.shows}</td><td>${esc(g.source || '')}</td></tr>`).join('')}</table>
+<p class="sub">Это очередь на новые материалы базы знаний: под каждый такой запрос нужен свой ответ.</p>`
+  : '<p class="sub">Пусто — либо всё закрыто, либо частотность ещё не собиралась.</p>'}
+
+<h2>Частотные фразы</h2>
+${kw.length ? `<table><tr><th>Фраза</th><th class="num">Wordstat</th><th class="num">Показы</th><th class="num">Позиция Я</th><th class="num">Позиция G</th></tr>
+${kw.map((k) => `<tr><td>${esc(k.phrase)}</td><td class="num">${k.count ?? ''}</td><td class="num">${k.shows ?? k.impressions ?? ''}</td>
+<td class="num">${k.yandexPos != null ? Number(k.yandexPos).toFixed(1) : ''}</td>
+<td class="num">${k.googlePos != null ? Number(k.googlePos).toFixed(1) : ''}</td></tr>`).join('')}</table>` : ''}
+`);
+}
+
+// Долгие задачи не держим в запросе: панель отвечает сразу, работа идёт фоном.
+let running = null;
+async function runJob(job) {
+  if (running) return `уже выполняется: ${running}`;
+  running = job;
+  const done = () => { running = null; };
+  const p = job === 'wordstat' ? jobs.collectWordstat()
+    : job === 'positions' ? jobs.checkPositions(Object.values(store.keywords.all())
+        .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0)).slice(0, 30).map((k) => k.phrase))
+    : job === 'webmaster' ? jobs.pullWebmaster()
+    : job === 'gsc' ? jobs.pullGsc()
+    : Promise.reject(new Error(`неизвестная задача ${job}`));
+  p.then(done, (e) => { done(); store.write('last-error', { job, error: e.message, at: new Date().toISOString() }); });
+  return null;
+}
+
+// → true, если запрос обработан здесь
+async function handle(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname !== '/seo' && !url.pathname.startsWith('/seo/')) return false;
+
+  const send = (code, html, headers = {}) => {
+    res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8',
+      'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store', ...headers });
+    res.end(html);
+  };
+
+  if (!process.env.SEO_ADMIN_PASSWORD) {
+    return send(503, shell('SEO', '<h1>Панель выключена</h1><p class="sub">Не задан SEO_ADMIN_PASSWORD.</p>')), true;
+  }
+
+  if (url.pathname === '/seo/login' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (!passwordOk(body.password || '')) return send(401, loginPage('Неверный пароль')), true;
+    const exp = Date.now() + TTL;
+    return send(302, '', { Location: '/seo/',
+      'Set-Cookie': `${COOKIE}=${sign(exp)}; Path=/seo; HttpOnly; SameSite=Lax; Max-Age=${TTL / 1000}` }), true;
+  }
+
+  if (!valid(cookies(req)[COOKIE])) return send(200, loginPage()), true;
+
+  if (url.pathname === '/seo/logout') {
+    return send(302, '', { Location: '/seo/', 'Set-Cookie': `${COOKIE}=; Path=/seo; Max-Age=0` }), true;
+  }
+
+  if (url.pathname === '/seo/run' && req.method === 'POST') {
+    const body = await readBody(req);
+    const busy = await runJob(body.job);
+    return send(302, '', { Location: busy ? `/seo/?msg=${encodeURIComponent(busy)}` : '/seo/?msg=запущено' }), true;
+  }
+
+  if (url.pathname === '/seo/data.json') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ summary: jobs.summary(), positions: store.positions.latest(), gaps: jobs.gaps() }, null, 2)), true;
+  }
+
+  send(200, dashboard(url.searchParams.get('msg')));
+  return true;
+}
+
+module.exports = { handle };

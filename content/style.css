@@ -1,0 +1,85 @@
+/* База знаний sasha-lab. Один файл, никакого JS: страница должна открываться
+   быстрее, чем поисковый робот успеет заскучать. Цвета и шрифты — как на сайте. */
+@import url("/cdn/fonts.googleapis.com/fonts.css");
+
+:root{
+  --bg:#131313; --panel:#1a1a1a; --line:#2b2b2b;
+  --ink:#ededed; --dim:#9a9a9a; --accent:#78a0ec;
+  --w:760px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:400 17px/1.65 "Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+
+.top{
+  display:flex; align-items:center; gap:24px; flex-wrap:wrap;
+  padding:18px 24px; border-bottom:1px solid var(--line);
+}
+.brand{
+  font-family:"Unbounded","Manrope",sans-serif; font-weight:700; font-size:20px;
+  color:var(--ink); line-height:1.15; text-transform:uppercase;
+}
+.brand span{display:block; font-family:"Manrope",sans-serif; font-weight:400;
+  font-size:12px; color:var(--dim); text-transform:none; letter-spacing:.02em}
+.topnav{display:flex; gap:18px; flex-wrap:wrap; font-size:15px}
+.topnav a{color:var(--dim)}
+.topnav a:hover{color:var(--ink)}
+.call{margin-left:auto; font-weight:700; white-space:nowrap; color:var(--ink)}
+
+.crumbs{padding:14px 24px; font-size:13px; color:var(--dim); max-width:calc(var(--w) + 48px); margin:0 auto}
+.crumbs a{color:var(--dim)}
+.crumbs .sep{padding:0 8px; opacity:.5}
+
+main{max-width:var(--w); margin:0 auto; padding:8px 24px 8px}
+h1{font-family:"Unbounded","Manrope",sans-serif; font-weight:600;
+   font-size:clamp(26px,4.4vw,38px); line-height:1.2; margin:.2em 0 .5em}
+h2{font-family:"Unbounded","Manrope",sans-serif; font-weight:500;
+   font-size:clamp(20px,3vw,25px); line-height:1.28; margin:1.8em 0 .6em}
+h3{font-size:19px; font-weight:700; margin:1.5em 0 .4em}
+p{margin:0 0 1em}
+ul,ol{margin:0 0 1.2em; padding-left:1.3em}
+li{margin:.35em 0}
+code{background:var(--panel); padding:2px 6px; border-radius:4px; font-size:.9em}
+blockquote{margin:1.4em 0; padding:14px 20px; border-left:3px solid var(--accent);
+  background:var(--panel); color:var(--ink)}
+blockquote p{margin:0}
+.meta{color:var(--dim); font-size:14px; margin:-.4em 0 1.6em}
+.lead{font-size:19px; color:#cfcfcf}
+
+.answer h2:first-child{margin-top:.6em}
+
+.cards{list-style:none; padding:0}
+.cards li{border-top:1px solid var(--line); padding:16px 0}
+.cards li a{font-size:19px; font-weight:600}
+.cards li span{display:block; color:var(--dim); font-size:15px; margin-top:4px}
+
+.related{border-top:1px solid var(--line); margin-top:2.5em; padding-top:.5em}
+.related ul{list-style:none; padding:0}
+
+.cta{
+  max-width:var(--w); margin:40px auto; padding:26px 24px;
+  background:var(--panel); border:1px solid var(--line); border-radius:14px;
+}
+.cta h2{margin-top:0}
+.btn{
+  display:inline-block; margin:6px 10px 0 0; padding:13px 22px; border-radius:8px;
+  background:var(--accent); color:#0f0f0f; font-weight:700;
+}
+.btn:hover{text-decoration:none; filter:brightness(1.08)}
+.btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line)}
+
+footer{border-top:1px solid var(--line); margin-top:40px; padding:24px;
+  color:var(--dim); font-size:14px; text-align:center}
+footer p{margin:.3em 0}
+.upd{opacity:.75}
+
+@media (max-width:640px){
+  .top{gap:14px; padding:14px 16px}
+  .call{margin-left:0; width:100%}
+  main,.crumbs{padding-left:16px; padding-right:16px}
+}
