@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const jobs = require('./lib/jobs');
 const store = require('./lib/store');
+const questions = require('./questions');
 
 const COOKIE = 'sasha_seo';
 const TTL = 14 * 24 * 3600 * 1000;
@@ -42,7 +43,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 function readBody(req) {
   return new Promise((resolve) => {
     const c = [];
-    req.on('data', (d) => { c.push(d); if (Buffer.concat(c).length > 1e5) req.destroy(); });
+    req.on('data', (d) => { c.push(d); if (Buffer.concat(c).length > 4e5) req.destroy(); });
     req.on('end', () => resolve(Object.fromEntries(new URLSearchParams(Buffer.concat(c).toString('utf8')))));
   });
 }
@@ -68,6 +69,11 @@ input,button{font:inherit;padding:11px 14px;border-radius:8px;border:1px solid #
 button{background:#78a0ec;color:#0f0f0f;font-weight:700;border:0;cursor:pointer;margin-top:10px}
 .err{color:#e08080}
 .act{display:inline-block;width:auto;margin-right:8px}
+textarea,select{font:inherit;padding:11px 14px;border-radius:8px;border:1px solid #2b2b2b;background:#1a1a1a;color:#ededed;width:100%}
+label{display:block;margin:0 0 12px;color:#9a9a9a;font-size:13px}
+.q{background:#1a1a1a;border:1px solid #2b2b2b;border-radius:10px;padding:14px 18px;margin:0 0 12px;white-space:pre-wrap}
+.q .who{color:#9a9a9a;font-size:13px;white-space:normal}
+a{color:#78a0ec}
 form.inline{display:inline}
 </style></head><body><div class="wrap">${body}</div></body></html>`;
 
@@ -91,6 +97,7 @@ function dashboard(msg) {
     ['фраз в базе', s.keywords], ['страниц базы знаний', s.pages],
     ['в топ-3', s.top3], ['в топ-10', s.top10], ['в топ-30', s.top30],
     ['не найден', s.notFound], ['спрос без страницы', s.gaps],
+    ['вопросов без ответа', questions.list('new').length],
   ].map(([n, v]) => `<div class="tile"><b>${v}</b><span>${n}</span></div>`).join('');
 
   return shell('SEO · sasha-lab', `
@@ -105,6 +112,15 @@ ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="webmaster"><button class="act">Из Вебмастера</button></form>
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="gsc"><button class="act">Из Search Console</button></form>
 </p>
+
+<h2>Вопросы посетителей</h2>
+${(() => {
+  const q = questions.list('new');
+  if (!q.length) return '<p class="sub">Новых вопросов нет. Форма — <a href="/baza/vopros/">/baza/vopros/</a>.</p>';
+  return q.map((x) => `<div class="q"><p class="who">${esc(new Date(x.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }))} ·
+    ${esc(x.name)}${x.car ? ` · ${esc(x.car)}` : ''} · ${esc(x.contact)}</p>${esc(x.text)}
+    <p class="who"><a href="/seo/q?id=${esc(x.id)}">Ответить и опубликовать</a></p></div>`).join('');
+})()}
 
 <h2>Позиции</h2>
 ${pos.length ? `<table><tr><th>Запрос</th><th class="num">Позиция</th><th>Страница</th><th class="num">Снято</th></tr>
@@ -124,6 +140,38 @@ ${kw.map((k) => `<tr><td>${esc(k.phrase)}</td><td class="num">${k.count ?? ''}</
 <td class="num">${k.yandexPos != null ? Number(k.yandexPos).toFixed(1) : ''}</td>
 <td class="num">${k.googlePos != null ? Number(k.googlePos).toFixed(1) : ''}</td></tr>`).join('')}</table>` : ''}
 `);
+}
+
+function answerPage(id, err) {
+  const q = questions.all().find((r) => r.id === id);
+  if (!q) return shell('Вопрос', '<h1>Вопрос не найден</h1><p><a href="/seo/">Назад</a></p>');
+  const rubrics = ['linzy', 'remont', 'polirovka', 'zakon', 'vybor'];
+  return shell('Ответ на вопрос', `
+<h1>Ответ на вопрос</h1>
+<p class="sub"><a href="/seo/">← в панель</a></p>
+${err ? `<p class="err">${esc(err)}</p>` : ''}
+<div class="q"><p class="who">${esc(new Date(q.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }))} ·
+  ${esc(q.name)}${q.car ? ` · ${esc(q.car)}` : ''} · ${esc(q.contact)}</p>${esc(q.text)}</div>
+<form method="POST" action="/seo/publish">
+  <input type="hidden" name="id" value="${esc(q.id)}">
+  <label>Заголовок страницы — им же вопрос будет искаться в поиске
+    <input name="title" value="${esc(q.text.split(/[.!?\n]/)[0].slice(0, 110))}" maxlength="120" required></label>
+  <label>Рубрика<select name="rubric">${rubrics.map((r) => `<option value="${r}">${r}</option>`).join('')}</select></label>
+  <label>Имя спросившего на странице (можно оставить пустым)
+    <input name="asker" value="${esc(q.name)}" maxlength="60"></label>
+  <label>Краткое описание для выдачи<input name="description" maxlength="200"></label>
+  <label>Метки через запятую<input name="tags" maxlength="200"></label>
+  <label>Запросы, которые закрывает материал, через запятую<input name="queries" maxlength="300"></label>
+  <label>Ответ мастера (markdown: ## заголовки, списки, **жирный**)
+    <textarea name="answer" rows="16" required></textarea></label>
+  <button type="submit">Опубликовать</button>
+</form>
+<form method="POST" action="/seo/reject" style="margin-top:14px">
+  <input type="hidden" name="id" value="${esc(q.id)}">
+  <button class="act" style="background:#2b2b2b;color:#ededed">Убрать из очереди без публикации</button>
+</form>
+<p class="sub">Контакт спросившего на сайт не попадает — публикуются только текст вопроса и имя.
+Ответ уходит человеку отдельно, вручную: телефоном или почтой.</p>`);
 }
 
 // Долгие задачи не держим в запросе: панель отвечает сразу, работа идёт фоном.
@@ -175,6 +223,26 @@ async function handle(req, res) {
     const body = await readBody(req);
     const busy = await runJob(body.job);
     return send(302, '', { Location: busy ? `/seo/?msg=${encodeURIComponent(busy)}` : '/seo/?msg=запущено' }), true;
+  }
+
+  if (url.pathname === '/seo/q') {
+    return send(200, answerPage(url.searchParams.get('id'), url.searchParams.get('err'))), true;
+  }
+
+  if (url.pathname === '/seo/publish' && req.method === 'POST') {
+    const body = await readBody(req);
+    try {
+      const q = questions.publish(body.id, body);
+      return send(302, '', { Location: `/seo/?msg=${encodeURIComponent(`опубликовано: ${q.slug}`)}` }), true;
+    } catch (e) {
+      return send(302, '', { Location: `/seo/q?id=${encodeURIComponent(body.id || '')}&err=${encodeURIComponent(e.message)}` }), true;
+    }
+  }
+
+  if (url.pathname === '/seo/reject' && req.method === 'POST') {
+    const body = await readBody(req);
+    try { questions.setStatus(body.id, 'rejected'); } catch { /* уже нет */ }
+    return send(302, '', { Location: '/seo/?msg=убрано из очереди' }), true;
   }
 
   if (url.pathname === '/seo/data.json') {

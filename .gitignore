@@ -3,3 +3,6 @@ node_modules/
 dist/
 seo/.env
 secrets/
+
+# Вопросы посетителей и снимки поисковых данных: личные контакты и IP — не в git
+seo/data/*.json

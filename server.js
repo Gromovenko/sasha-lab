@@ -10,6 +10,7 @@ const path = require('path');
 loadEnv(path.join(__dirname, 'seo', '.env'));
 
 const admin = require('./seo/admin');
+const questions = require('./seo/questions');
 
 const ROOT = path.join(__dirname, 'mirror');
 const PAGES = path.join(ROOT, 'sasha-lab.ru');
@@ -64,6 +65,11 @@ function fallbackOptim(p) {
 
 http.createServer(async (req, res) => {
   if (await admin.handle(req, res)) return;
+
+  // Приём вопроса с формы базы знаний — единственная динамическая ручка сайта.
+  if (req.method === 'POST' && req.url.split('?')[0] === '/baza/ask') {
+    return questions.handleAsk(req, res);
+  }
 
   // Это ЗЕРКАЛО живого сайта клиента. Индексировать его нельзя ни при каких
   // условиях: копия конкурирует с оригиналом за те же запросы и в лучшем случае

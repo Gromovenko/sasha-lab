@@ -103,7 +103,7 @@ function markdown(src) {
 const plain = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
 // ── шаблон ─────────────────────────────────────────────────────────────────
-function layout({ url, title, description, breadcrumbs, body, jsonld, updated }) {
+function layout({ url, title, description, breadcrumbs, body, jsonld, updated, noindex }) {
   const crumbs = breadcrumbs.map((c, i) => c.url
     ? `<a href="${c.url}">${esc(c.name)}</a>`
     : `<span aria-current="page">${esc(c.name)}</span>`).join('<span class="sep">/</span>');
@@ -124,7 +124,7 @@ function layout({ url, title, description, breadcrumbs, body, jsonld, updated })
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
-<link rel="canonical" href="${SITE}${url}">
+${noindex ? '<meta name="robots" content="noindex,follow">\n' : ''}<link rel="canonical" href="${SITE}${url}">
 <meta property="og:type" content="article">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
@@ -173,6 +173,8 @@ const localBusiness = {
 };
 
 // ── страницы ───────────────────────────────────────────────────────────────
+const askLink = `<p class="asklink">Не нашли свой случай? <a href="/baza/vopros/">Задайте вопрос мастеру</a> — ответим и опубликуем ответ здесь.</p>`;
+
 function questionPage(doc, all) {
   const { meta, body } = doc;
   const html = markdown(body);
@@ -190,9 +192,11 @@ function questionPage(doc, all) {
   const bodyHtml = `
 <article class="q">
   <h1>${esc(meta.title)}</h1>
-  <p class="meta">Отвечает мастер студии «Дядя Саша»${meta.updated ? ` · ${esc(meta.updated)}` : ''}</p>
+  <p class="meta">${meta.asker ? `Спрашивает ${esc(meta.asker)} · ` : ''}Отвечает мастер студии «Дядя Саша»${meta.updated ? ` · ${esc(meta.updated)}` : ''}</p>
+  ${meta.question ? `<blockquote class="asked"><p>${esc(meta.question)}</p></blockquote>` : ''}
   <div class="answer">${html}</div>
   ${relatedBlock(related)}
+  ${askLink}
 </article>`;
   return { url, file: path.join('baza', RUBRICS[meta.rubric].slug, meta.slug, 'index.html'),
     html: layout({ url, title: meta.title, description: desc,
@@ -217,6 +221,72 @@ function guidePage(doc, all) {
       jsonld: [{ '@context': 'https://schema.org', '@type': 'Article', headline: meta.title,
         author: { '@type': 'Organization', name: BIZ.name }, publisher: { '@type': 'Organization', name: BIZ.name },
         dateModified: meta.updated || undefined }, localBusiness] }) };
+}
+
+// Приём вопросов от ЖИВЫХ посетителей. Это и есть «форум» из задачи, только
+// без выдуманных участников: вопрос задаёт реальный человек, отвечает студия,
+// ответ становится обычной статической страницей базы знаний. Форма без JS —
+// обычный POST, чтобы работало везде и не тянуло скриптов на страницу.
+function askPage() {
+  const url = '/baza/vopros/';
+  const body = `<article class="guide">
+<h1>Задать вопрос мастеру</h1>
+<p class="lead">Опишите, что со светом у вашей машины. Мы отвечаем сами, без
+  «оставьте заявку» вместо ответа: разбор приходит вам и появляется в базе знаний,
+  если вопрос пригодится другим.</p>
+<form class="ask" method="POST" action="/baza/ask">
+  <label>Как к вам обращаться<input name="name" maxlength="60" required autocomplete="name"></label>
+  <label>Машина (марка, модель, год)<input name="car" maxlength="80" placeholder="Например: Toyota Camry XV50, 2014"></label>
+  <label>Вопрос<textarea name="text" rows="7" minlength="20" maxlength="2000" required
+    placeholder="Что происходит с фарами, что уже пробовали, чего хотите добиться"></textarea></label>
+  <label>Телефон или почта для ответа<input name="contact" maxlength="80" required
+    placeholder="+7 … или почта"></label>
+  <label class="hp" aria-hidden="true">Не заполняйте это поле<input name="fax" tabindex="-1" autocomplete="off"></label>
+  <label class="check"><input type="checkbox" name="agree" value="1" required>
+    Согласен на обработку контакта для ответа — <a href="/privacypolicy">политика конфиденциальности</a></label>
+  <button type="submit">Отправить вопрос</button>
+</form>
+<p class="note">Если ответ нужен срочно — звоните: <a href="tel:${BIZ.tel}">${BIZ.phone}</a>.
+  Опубликуем только текст вопроса и имя; телефон и почта на сайт не попадают.</p>
+</article>`;
+  return { url, file: path.join('baza', 'vopros', 'index.html'),
+    html: layout({ url, title: `Задать вопрос по автосвету мастеру — студия «Дядя Саша», ${BIZ.city}`,
+      description: 'Задайте вопрос про фары, линзы, ремонт и полировку — мастер студии «Дядя Саша» в Ростове-на-Дону ответит лично.',
+      breadcrumbs: [{ name: 'Главная', url: '/' }, { name: 'База знаний', url: '/baza/' }, { name: 'Задать вопрос' }],
+      body, jsonld: [localBusiness] }) };
+}
+
+function errorPage() {
+  const url = '/baza/vopros/oshibka/';
+  const body = `<article class="guide">
+<h1>Вопрос не отправился</h1>
+<p class="lead">Такое бывает по двум причинам: не заполнено обязательное поле
+  (имя, вопрос от 20 символов, контакт для ответа и согласие на обработку) —
+  или с этого адреса за час уже ушло три вопроса.</p>
+<p><a href="/baza/vopros/">Вернуться к форме</a>. Если проще сказать голосом —
+  звоните: <a href="tel:${BIZ.tel}">${BIZ.phone}</a>.</p>
+</article>`;
+  return { url, file: path.join('baza', 'vopros', 'oshibka', 'index.html'), noindex: true,
+    html: layout({ url, title: 'Вопрос не отправился — студия «Дядя Саша»', noindex: true,
+      description: 'Форма вопроса не принята.',
+      breadcrumbs: [{ name: 'Главная', url: '/' }, { name: 'База знаний', url: '/baza/' }, { name: 'Вопрос не отправился' }],
+      body }) };
+}
+
+function thanksPage() {
+  const url = '/baza/vopros/spasibo/';
+  const body = `<article class="guide">
+<h1>Вопрос принят</h1>
+<p class="lead">Мастер посмотрит его и ответит на указанный контакт. Обычно это
+  занимает рабочий день; если случай срочный — быстрее позвонить:
+  <a href="tel:${BIZ.tel}">${BIZ.phone}</a>.</p>
+<p><a href="/baza/">Вернуться в базу знаний</a></p>
+</article>`;
+  return { url, file: path.join('baza', 'vopros', 'spasibo', 'index.html'), noindex: true,
+    html: layout({ url, title: 'Вопрос принят — студия «Дядя Саша»', noindex: true,
+      description: 'Вопрос отправлен мастеру студии автосвета «Дядя Саша».',
+      breadcrumbs: [{ name: 'Главная', url: '/' }, { name: 'База знаний', url: '/baza/' }, { name: 'Вопрос принят' }],
+      body }) };
 }
 
 function crumbsFor(meta) {
@@ -271,6 +341,7 @@ function rootIndex(byRubric, total) {
   const body = `<h1>База знаний по автосвету</h1>
 <p class="lead">Вопросы, которые нам задают в мастерской, и честные ответы мастеров.
 Без «оставьте заявку» вместо ответа. ${total} материалов.</p>
+${askLink}
 ${sections}`;
   return { url: '/baza/', file: path.join('baza', 'index.html'),
     html: layout({ url: '/baza/', title: `База знаний по автосвету — студия «Дядя Саша», ${BIZ.city}`,
@@ -298,16 +369,11 @@ function build() {
   for (const d of docs) pages.push(d.meta.type === 'guide' ? guidePage(d, docs) : questionPage(d, docs));
   for (const k of Object.keys(byRubric)) pages.push(rubricIndex(k, byRubric[k]));
   pages.push(rootIndex(byRubric, docs.length));
+  pages.push(askPage());
+  pages.push(thanksPage());
+  pages.push(errorPage());
 
-  fs.rmSync(OUT, { recursive: true, force: true });
-  for (const p of pages) {
-    const dest = path.join(OUT, p.file);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, p.html);
-  }
-  fs.copyFileSync(path.join(__dirname, 'style.css'), path.join(OUT, 'baza', 'style.css'));
-
-  // Внутренние ссылки проверяем на месте: битая перелинковка — это не косметика,
+  // Внутренние ссылки проверяем ДО записи: битая перелинковка — это не косметика,
   // именно по ней поисковик обходит базу знаний, и 404 внутри неё стоит дорого.
   const known = new Set(pages.map((p) => p.url).concat(['/baza/style.css']));
   const bad = [];
@@ -318,17 +384,37 @@ function build() {
   }
   if (bad.length) throw new Error('битые внутренние ссылки:\n  ' + [...new Set(bad)].join('\n  '));
 
+  // Собираем в сторонний каталог и подменяем готовое одним движением. Иначе
+  // упавшая на середине сборка (а её теперь запускает панель по кнопке
+  // «опубликовать») оставляет живой сайт с пустым /baza — то же правило, по
+  // которому нельзя потрошить .next работающего процесса.
+  const TMP = OUT + '.tmp';
+  fs.rmSync(TMP, { recursive: true, force: true });
+  for (const p of pages) {
+    const dest = path.join(TMP, p.file);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, p.html);
+  }
+  fs.copyFileSync(path.join(__dirname, 'style.css'), path.join(TMP, 'baza', 'style.css'));
+
   const now = new Date().toISOString().slice(0, 10);
-  fs.writeFileSync(path.join(OUT, 'sitemap-baza.xml'),
+  fs.writeFileSync(path.join(TMP, 'sitemap-baza.xml'),
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    pages.map((p) => `  <url><loc>${SITE}${p.url}</loc><lastmod>${now}</lastmod></url>`).join('\n') +
+    pages.filter((p) => !p.noindex)
+      .map((p) => `  <url><loc>${SITE}${p.url}</loc><lastmod>${now}</lastmod></url>`).join('\n') +
     `\n</urlset>\n`);
 
   // Карта покрытия: какие поисковые запросы закрыты какой страницей.
-  fs.writeFileSync(path.join(OUT, 'coverage.json'), JSON.stringify(docs.map((d) => ({
+  fs.writeFileSync(path.join(TMP, 'coverage.json'), JSON.stringify(docs.map((d) => ({
     url: `/baza/${RUBRICS[d.meta.rubric].slug}/${d.meta.slug}/`,
     title: d.meta.title, rubric: d.meta.rubric, queries: d.meta.queries,
   })), null, 2));
+
+  const OLD = OUT + '.old';
+  fs.rmSync(OLD, { recursive: true, force: true });
+  if (fs.existsSync(OUT)) fs.renameSync(OUT, OLD);
+  fs.renameSync(TMP, OUT);
+  fs.rmSync(OLD, { recursive: true, force: true });
 
   console.log(`собрано ${pages.length} страниц из ${docs.length} материалов → dist/`);
   return pages;

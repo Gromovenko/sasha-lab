@@ -83,3 +83,30 @@ footer p{margin:.3em 0}
   .call{margin-left:0; width:100%}
   main,.crumbs{padding-left:16px; padding-right:16px}
 }
+
+/* Форма вопроса и цитата вопроса на странице ответа */
+blockquote.asked{
+  margin:0 0 1.6em; padding:14px 18px; border-left:3px solid var(--accent);
+  background:var(--panel); border-radius:0 10px 10px 0; color:var(--dim);
+}
+blockquote.asked p{margin:0}
+.asklink{border-top:1px solid var(--line); margin-top:2em; padding-top:1.2em; color:var(--dim)}
+
+form.ask{margin:1.6em 0; max-width:620px}
+form.ask label{display:block; margin:0 0 16px; color:var(--dim); font-size:14px}
+form.ask input,form.ask textarea{
+  display:block; width:100%; box-sizing:border-box; margin-top:6px; padding:12px 14px;
+  font:16px/1.45 inherit; color:var(--ink); background:var(--panel);
+  border:1px solid var(--line); border-radius:9px;
+}
+form.ask textarea{resize:vertical}
+form.ask input:focus,form.ask textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
+form.ask label.check{display:flex; gap:10px; align-items:flex-start; line-height:1.4}
+form.ask label.check input{width:auto; margin:2px 0 0}
+form.ask label.hp{position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden}
+form.ask button{
+  padding:14px 26px; border:0; border-radius:9px; background:var(--accent);
+  color:#0f0f0f; font:700 16px/1 inherit; cursor:pointer;
+}
+form.ask button:hover{filter:brightness(1.08)}
+.note{color:var(--dim); font-size:14px}
