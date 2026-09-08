@@ -17,7 +17,7 @@ for round in 1 2 3 4 5; do
     out="cdn/$path"
     [ -f "$out" ] && continue
     mkdir -p "$(dirname "$out")"
-    if curl -sfL --max-time 30 -A "$UA" "$u" -o "$out"; then new=$((new+1)); else rm -f "$out"; fi
+    if curl -sfL --compressed --max-time 30 -A "$UA" "$u" -o "$out"; then new=$((new+1)); else rm -f "$out"; fi
   done < /tmp/urls.$round
   echo "round $round: urls=$(wc -l < /tmp/urls.$round) new=$new"
   [ "$new" -eq 0 ] && break

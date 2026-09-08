@@ -27,6 +27,18 @@ function resolve(urlPath) {
   if (!file.startsWith(base)) return null;            // защита от выхода за корень
   if (fs.existsSync(file) && fs.statSync(file).isFile()) return file;
   if (!path.extname(file) && fs.existsSync(file + '.html')) return file + '.html';
+  return fallbackOptim(p);
+}
+
+// Тильда собирает адреса картинок на лету: static.tildacdn.com/<tildXXXX>/file.png
+// превращается в optim.tildacdn.com/<tildXXXX>/-/cover/284x358/.../format/webp/file.png.webp,
+// причём размеры зависят от вьюпорта — заранее скачать ВСЕ варианты нельзя.
+// Отдаём исходник из static.tildacdn.com (обрезку и размер задаёт CSS блока).
+function fallbackOptim(p) {
+  const m = p.match(/^\/cdn\/(?:optim|static\d*)\.tildacdn\.[a-z]+\/(tild[^/]+)\/(?:.*\/)?([^/]+)$/);
+  if (!m) return null;
+  const file = path.join(ROOT, 'cdn', 'static.tildacdn.com', m[1], m[2].replace(/\.webp$/, ''));
+  if (file.startsWith(ROOT) && fs.existsSync(file) && fs.statSync(file).isFile()) return file;
   return null;
 }
 
