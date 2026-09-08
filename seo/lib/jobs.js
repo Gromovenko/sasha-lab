@@ -10,6 +10,10 @@ const gsc = require('./gsc');
 const webmaster = require('./webmaster');
 
 const DOMAIN = process.env.SEO_DOMAIN || 'sasha-lab.ru';
+
+// Счётчик очереди вопросов нужен и панели, и отчёту cli; берём его отсюда,
+// чтобы jobs не тянул на себя весь модуль вопросов.
+const questionsCount = () => require('../questions').countNew().catch(() => 0);
 const COVERAGE = path.join(__dirname, '..', '..', 'dist', 'coverage.json');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -37,7 +41,7 @@ async function collectWordstat(phrases = SEEDS, { regions } = {}) {
       const rows = [...r.results, ...r.associations].map((x) => ({
         phrase: x.phrase, count: x.count, seed: phrase, checkedAt: today(),
       }));
-      store.keywords.upsert(rows, 'wordstat');
+      await store.keywords.upsert(rows, 'wordstat');
       collected.push({ seed: phrase, total: r.totalCount, got: rows.length });
       await sleep(1100);                       // синхронный лимит — 1 запрос/с
     } catch (e) {
@@ -70,7 +74,7 @@ async function checkPositions(phrases, { region = '39', domain = DOMAIN } = {}) 
       errors.push({ phrase, error: e.message });
     }
   }
-  if (out.length) store.positions.add(out);
+  if (out.length) await store.positions.add(out);
   return { checked: out, errors };
 }
 
@@ -79,10 +83,10 @@ async function pullWebmaster({ dateFrom, dateTo } = {}) {
   const to = dateTo || today();
   const from = dateFrom || new Date(Date.now() - 28 * 864e5).toISOString().slice(0, 10);
   const rows = await webmaster.searchQueries({ domain: DOMAIN, dateFrom: from, dateTo: to });
-  store.keywords.upsert(rows.map((r) => ({
+  await store.keywords.upsert(rows.map((r) => ({
     phrase: r.query, shows: r.shows, clicks: r.clicks, yandexPos: r.position, checkedAt: today(),
   })), 'webmaster');
-  store.write('webmaster-queries', { from, to, rows });
+  await store.kv.set('webmaster-queries', { from, to, rows });
   return rows;
 }
 
@@ -90,11 +94,11 @@ async function pullGsc({ dateFrom, dateTo } = {}) {
   const to = dateTo || today();
   const from = dateFrom || new Date(Date.now() - 28 * 864e5).toISOString().slice(0, 10);
   const rows = await gsc.searchAnalytics({ startDate: from, endDate: to });
-  store.keywords.upsert(rows.map((r) => ({
+  await store.keywords.upsert(rows.map((r) => ({
     phrase: r.query, impressions: r.impressions, clicks: r.clicks,
     googlePos: r.position, checkedAt: today(),
   })), 'gsc');
-  store.write('gsc-queries', { from, to, rows });
+  await store.kv.set('gsc-queries', { from, to, rows });
   return rows;
 }
 
@@ -120,9 +124,9 @@ function matchPage(phrase, pages) {
 }
 
 // Незакрытый спрос: частотные фразы, под которые нет ни одной страницы.
-function gaps({ minCount = 30, limit = 60 } = {}) {
+async function gaps({ minCount = 30, limit = 60 } = {}) {
   const pages = coverage();
-  const rows = Object.values(store.keywords.all())
+  const rows = (await store.keywords.rows())
     .filter((k) => (k.count || k.shows || k.impressions || 0) >= minCount)
     .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0));
   const out = [];
@@ -135,9 +139,9 @@ function gaps({ minCount = 30, limit = 60 } = {}) {
 }
 
 // Сводка для панели: спрос, факт по позициям, покрытие.
-function summary() {
-  const kw = Object.values(store.keywords.all());
-  const pos = store.positions.latest();
+async function summary() {
+  const kw = await store.keywords.rows();
+  const pos = await store.positions.latest();
   const pages = coverage();
   const inTop = (n) => pos.filter((p) => p.pos && p.pos <= n).length;
   return {
@@ -146,8 +150,9 @@ function summary() {
     tracked: pos.length,
     top3: inTop(3), top10: inTop(10), top30: inTop(30),
     notFound: pos.filter((p) => !p.pos).length,
-    gaps: gaps({ limit: 1000 }).length,
+    gaps: (await gaps({ limit: 1000 })).length,
     updated: kw.reduce((a, k) => (k.checkedAt && k.checkedAt > a ? k.checkedAt : a), ''),
+    questionsNew: await questionsCount(),
   };
 }
 

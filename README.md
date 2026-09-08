@@ -56,6 +56,33 @@ RU-сервер (80.249.150.234), `/opt/sasha-lab`, pm2-процесс `sasha-la
 Своего домена нет, поэтому вход через sslip.io + сертификат Let's Encrypt — тот же приём,
 что у letov. Конфиг: `/etc/nginx/sites-available/sasha-lab`.
 
+## База данных (08.09.2026)
+
+Своя база на RU: docker-контейнер **`sashalab-pg`** (postgres:15), слушает только
+`127.0.0.1:5446`, том `sashalab-pg-data`, роль и база — `sashalab`. Адрес с паролем —
+в `seo/.env` на проде (`SASHALAB_PG_URL`), копия пароля — `/root/.sashalab-pg.pw` на RU.
+
+Что в ней лежит (схема — `db/migrations/001_init.sql`): `questions` (вопросы с формы,
+контакт и IP), `materials` (материалы базы знаний — **источник правды вместо
+`content/kb/*.md`**), `keywords` (семантика), `positions` (история позиций),
+`job_runs` (журнал сбора), `kv`. Общий план проекта — [PLAN.md](PLAN.md).
+
+```bash
+node db/migrate.js     # накатить миграции (идемпотентно)
+node db/import.js      # затащить в базу content/kb/*.md и старые seo/data/*.json
+node content/build.js  # собрать статику ИЗ базы
+node seo/cli.js questions --status new
+```
+
+Без `SASHALAB_PG_URL` (dev-копия на EU) сборка читает `content/kb/*.md`, а панель и
+форма вопроса честно говорят «нет хранилища» — реальные контакты живут только на RU
+(152-ФЗ). Файлы в `content/kb/` остаются входом для ручного наполнения: положил
+материал — прогнал `node db/import.js`.
+
+**Бэкап:** `/root/backup-sashalab.sh` на RU, cron в 03:40 МСК, дампы
+`/root/backups/sashalab_*.sql.gz`, держим 14 штук. Восстановление:
+`zcat дамп.sql.gz | docker exec -i sashalab-pg psql -U sashalab -d sashalab`.
+
 ## Обновить зеркало / выкатить правки
 ```bash
 # освежить снимок с боевого сайта (на EU)
@@ -63,16 +90,28 @@ cd /root/gromovenko/sasha-lab/mirror && wget --mirror --page-requisites --adjust
   --convert-links --no-parent -e robots=off --domains=sasha-lab.ru https://sasha-lab.ru/
 ../grab-assets.sh      # затем повторить переписывание ссылок, см. историю коммита 42f46fa
 
-# выкатить на RU
-rsync -az --delete -e "ssh -i /root/.ssh/ru_key" --exclude '.git' \
+# выкатить на RU (исключения обязательны: dist собирается на месте ИЗ БАЗЫ,
+# seo/.env и seo/data — прод-состояние, node_modules ставится там же)
+rsync -az --delete -e "ssh -i /root/.ssh/ru_key" \
+  --exclude '.git' --exclude 'node_modules' --exclude 'dist' \
+  --exclude 'seo/data' --exclude 'seo/.env' \
   /root/gromovenko/sasha-lab/ root@10.10.0.2:/opt/sasha-lab/
-ssh -i /root/.ssh/ru_key root@10.10.0.2 'pm2 restart sasha-lab'
+ssh -i /root/.ssh/ru_key root@10.10.0.2 'cd /opt/sasha-lab && npm install --omit=dev &&
+  set -a && . ./seo/.env && set +a && node db/migrate.js && node content/build.js &&
+  pm2 restart sasha-lab --update-env'
 ```
 
 ## Проверка деплоя
 Не «curl / == 200», а полная выборка ассетов: для каждой из 5 страниц выдернуть все
 `src|href|data-original="/…"` и убедиться, что каждая ссылка отдаёт 200
 (на 08.09.2026: 182 ссылки, битых 0), плюс скриншот главной.
+
+## Планы и документы
+
+- [PLAN.md](PLAN.md) — общий план проекта: что строим, чем занят каждый слой,
+  порядок шагов, что нужно от владельца.
+- [SEO-PLAN.md](SEO-PLAN.md) — поисковая часть: разбор исходной задачи, почему
+  форум с выдуманными пользователями не делается, какие источники подключены.
 
 ## SEO-контур (08.09.2026)
 
@@ -89,11 +128,12 @@ ssh -i /root/.ssh/ru_key root@10.10.0.2 'pm2 restart sasha-lab'
   знаний: страницы вопросов и обзоров с разметкой FAQPage/Article/LocalBusiness,
   перелинковкой, `sitemap-baza.xml` и картой покрытия `coverage.json`.
   Битая внутренняя ссылка роняет сборку.
+- `db/` — схема и миграции базы, `db/import.js` — перенос файлов в базу.
 - **Вопросы посетителей** (`seo/questions.js`) — форма `/baza/vopros/` без JS,
   обычный POST на `/baza/ask`: ловушка для ботов, ограничение 3 вопроса с адреса
   в час, обязательное согласие на обработку контакта. Вопрос падает в очередь
   панели; владелец пишет ответ там же и жмёт «опубликовать» — материал уезжает
-  в `content/kb/<slug>.md`, база знаний пересобирается, появляется обычная
+  в таблицу `materials`, база знаний пересобирается, появляется обычная
   статическая страница вопроса. Контакт и IP спросившего на сайт не попадают.
   Это замена «форуму с созданными юзерами» из исходной задачи — почему именно
   такая, написано в [SEO-PLAN.md](SEO-PLAN.md), раздел 1.2.
@@ -102,20 +142,20 @@ ssh -i /root/.ssh/ru_key root@10.10.0.2 'pm2 restart sasha-lab'
   клиентского сайта не должна конкурировать с оригиналом.
 
 Сборка базы знаний обязательна после `git pull` на сервере — `dist/` в git не
-хранится:
+хранится, а материалы берутся из базы:
 
 ```bash
 node content/build.js && pm2 restart sasha-lab --update-env
 ```
 
-**Материалы, опубликованные из панели, живут на проде, а не в репозитории.**
-Панель пишет `content/kb/*.md` там, где работает процесс (RU), — иначе следующий
-`rsync --delete` с EU их снесёт. Забирать их обратно в git:
+**Материалы, опубликованные из панели, живут в базе на проде, а не в репозитории** —
+и это правильное место: раньше они были файлами и их сносил `rsync --delete` с EU.
+Выгрузить прод-материалы в файлы (например, чтобы вычитать текст в редакторе):
 
 ```bash
-rsync -az -e "ssh -i /root/.ssh/ru_key" root@10.10.0.2:/opt/sasha-lab/content/kb/ \
-  /root/gromovenko/sasha-lab/content/kb/ && git add content/kb && git commit -m "материалы из панели"
+ssh -i /root/.ssh/ru_key root@10.10.0.2 \
+  "docker exec sashalab-pg pg_dump -U sashalab -d sashalab -t materials --data-only" > /tmp/materials.sql
 ```
 
-Очередь вопросов (`seo/data/questions.json`) в git не едет вовсе: там телефоны,
-почты и IP живых людей.
+Вопросы посетителей в git не едут вовсе и в файлах больше не лежат: телефоны,
+почты и IP живых людей — только в базе на RU.

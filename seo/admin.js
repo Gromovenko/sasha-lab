@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const jobs = require('./lib/jobs');
 const store = require('./lib/store');
+const db = require('./lib/db');
 const questions = require('./questions');
 
 const COOKIE = 'sasha_seo';
@@ -85,19 +86,21 @@ function loginPage(err) {
   <button type="submit">Войти</button></form>`);
 }
 
-function dashboard(msg) {
-  const s = jobs.summary();
-  const pos = store.positions.latest().sort((a, b) => (a.pos || 999) - (b.pos || 999));
-  const gaps = jobs.gaps({ limit: 40 });
-  const kw = Object.values(store.keywords.all())
+async function dashboard(msg) {
+  const s = await jobs.summary();
+  const pos = (await store.positions.latest()).sort((a, b) => (a.pos || 999) - (b.pos || 999));
+  const gaps = await jobs.gaps({ limit: 40 });
+  const kw = (await store.keywords.rows())
     .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0)).slice(0, 40);
+  const newQuestions = await questions.list('new');
+  const lastRuns = await store.runs.last(5);
   const cls = (p) => !p ? 'miss' : p <= 3 ? 'top3' : p <= 10 ? 'top10' : '';
 
   const tiles = [
     ['фраз в базе', s.keywords], ['страниц базы знаний', s.pages],
     ['в топ-3', s.top3], ['в топ-10', s.top10], ['в топ-30', s.top30],
     ['не найден', s.notFound], ['спрос без страницы', s.gaps],
-    ['вопросов без ответа', questions.list('new').length],
+    ['вопросов без ответа', newQuestions.length],
   ].map(([n, v]) => `<div class="tile"><b>${v}</b><span>${n}</span></div>`).join('');
 
   return shell('SEO · sasha-lab', `
@@ -113,9 +116,13 @@ ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="gsc"><button class="act">Из Search Console</button></form>
 </p>
 
+${lastRuns.length ? `<p class="sub">Последние запуски: ${lastRuns.map((r) => `${esc(r.job)} — ${
+  r.finished_at ? (r.ok ? 'успех' : `ошибка: ${esc(r.error || '')}`) : 'идёт'} (${
+  esc(new Date(r.started_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }))})`).join('; ')}</p>` : ''}
+
 <h2>Вопросы посетителей</h2>
 ${(() => {
-  const q = questions.list('new');
+  const q = newQuestions;
   if (!q.length) return '<p class="sub">Новых вопросов нет. Форма — <a href="/baza/vopros/">/baza/vopros/</a>.</p>';
   return q.map((x) => `<div class="q"><p class="who">${esc(new Date(x.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }))} ·
     ${esc(x.name)}${x.car ? ` · ${esc(x.car)}` : ''} · ${esc(x.contact)}</p>${esc(x.text)}
@@ -142,8 +149,8 @@ ${kw.map((k) => `<tr><td>${esc(k.phrase)}</td><td class="num">${k.count ?? ''}</
 `);
 }
 
-function answerPage(id, err) {
-  const q = questions.all().find((r) => r.id === id);
+async function answerPage(id, err) {
+  const q = await questions.get(id);
   if (!q) return shell('Вопрос', '<h1>Вопрос не найден</h1><p><a href="/seo/">Назад</a></p>');
   const rubrics = ['linzy', 'remont', 'polirovka', 'zakon', 'vybor'];
   return shell('Ответ на вопрос', `
@@ -179,19 +186,53 @@ let running = null;
 async function runJob(job) {
   if (running) return `уже выполняется: ${running}`;
   running = job;
+  const runId = await store.runs.start(job).catch(() => null);
   const done = () => { running = null; };
-  const p = job === 'wordstat' ? jobs.collectWordstat()
-    : job === 'positions' ? jobs.checkPositions(Object.values(store.keywords.all())
-        .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0)).slice(0, 30).map((k) => k.phrase))
-    : job === 'webmaster' ? jobs.pullWebmaster()
-    : job === 'gsc' ? jobs.pullGsc()
-    : Promise.reject(new Error(`неизвестная задача ${job}`));
-  p.then(done, (e) => { done(); store.write('last-error', { job, error: e.message, at: new Date().toISOString() }); });
+
+  const work = async () => {
+    if (job === 'wordstat') return jobs.collectWordstat();
+    if (job === 'positions') {
+      const phrases = (await store.keywords.rows())
+        .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0))
+        .slice(0, 30).map((k) => k.phrase);
+      return jobs.checkPositions(phrases);
+    }
+    if (job === 'webmaster') return jobs.pullWebmaster();
+    if (job === 'gsc') return jobs.pullGsc();
+    throw new Error(`неизвестная задача ${job}`);
+  };
+
+  work().then(
+    (r) => {
+      done();
+      // «Успех» — это когда что-то собрано. Задача, у которой все источники
+      // отвалились (нет ключа, лимит, 500 у Яндекса), обязана гореть красным,
+      // иначе панель врёт владельцу молчаливыми нулями.
+      const stats = summarize(job, r);
+      const errs = (r && r.errors) || [];
+      const got = stats.rows ?? stats.seeds ?? stats.checked ?? 0;
+      store.runs.finish(runId, {
+        ok: got > 0 || !errs.length,
+        error: errs.length ? errs.map((e) => `${e.seed || e.phrase}: ${e.error}`).join('; ').slice(0, 500) : null,
+        stats,
+      });
+    },
+    (e) => { done(); store.runs.finish(runId, { ok: false, error: e.message }); });
   return null;
 }
 
+// В журнал кладём счётчики, а не выгрузку целиком: она весит килобайты и уже
+// разложена по keywords/positions.
+function summarize(job, r) {
+  if (!r) return {};
+  if (Array.isArray(r)) return { rows: r.length };
+  if (r.collected) return { seeds: r.collected.length, errors: (r.errors || []).length };
+  if (r.checked) return { checked: r.checked.length, errors: (r.errors || []).length };
+  return {};
+}
+
 // → true, если запрос обработан здесь
-async function handle(req, res) {
+async function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/seo' && !url.pathname.startsWith('/seo/')) return false;
 
@@ -203,6 +244,9 @@ async function handle(req, res) {
 
   if (!process.env.SEO_ADMIN_PASSWORD) {
     return send(503, shell('SEO', '<h1>Панель выключена</h1><p class="sub">Не задан SEO_ADMIN_PASSWORD.</p>')), true;
+  }
+  if (!db.enabled) {
+    return send(503, shell('SEO', '<h1>Нет хранилища</h1><p class="sub">Не задан SASHALAB_PG_URL: вопросы и семантика лежат в базе, без неё панели нечего показывать.</p>')), true;
   }
 
   if (url.pathname === '/seo/login' && req.method === 'POST') {
@@ -222,17 +266,17 @@ async function handle(req, res) {
   if (url.pathname === '/seo/run' && req.method === 'POST') {
     const body = await readBody(req);
     const busy = await runJob(body.job);
-    return send(302, '', { Location: busy ? `/seo/?msg=${encodeURIComponent(busy)}` : '/seo/?msg=запущено' }), true;
+    return send(302, '', { Location: `/seo/?msg=${encodeURIComponent(busy || 'запущено')}` }), true;
   }
 
   if (url.pathname === '/seo/q') {
-    return send(200, answerPage(url.searchParams.get('id'), url.searchParams.get('err'))), true;
+    return send(200, await answerPage(url.searchParams.get('id'), url.searchParams.get('err'))), true;
   }
 
   if (url.pathname === '/seo/publish' && req.method === 'POST') {
     const body = await readBody(req);
     try {
-      const q = questions.publish(body.id, body);
+      const q = await questions.publish(body.id, body);
       return send(302, '', { Location: `/seo/?msg=${encodeURIComponent(`опубликовано: ${q.slug}`)}` }), true;
     } catch (e) {
       return send(302, '', { Location: `/seo/q?id=${encodeURIComponent(body.id || '')}&err=${encodeURIComponent(e.message)}` }), true;
@@ -241,17 +285,32 @@ async function handle(req, res) {
 
   if (url.pathname === '/seo/reject' && req.method === 'POST') {
     const body = await readBody(req);
-    try { questions.setStatus(body.id, 'rejected'); } catch { /* уже нет */ }
-    return send(302, '', { Location: '/seo/?msg=убрано из очереди' }), true;
+    try { await questions.setStatus(body.id, 'rejected'); } catch { /* уже нет */ }
+    return send(302, '', { Location: `/seo/?msg=${encodeURIComponent('убрано из очереди')}` }), true;
   }
 
   if (url.pathname === '/seo/data.json') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({ summary: jobs.summary(), positions: store.positions.latest(), gaps: jobs.gaps() }, null, 2)), true;
+    return res.end(JSON.stringify({ summary: await jobs.summary(),
+      positions: await store.positions.latest(), gaps: await jobs.gaps() }, null, 2)), true;
   }
 
-  send(200, dashboard(url.searchParams.get('msg')));
+  send(200, await dashboard(url.searchParams.get('msg')));
   return true;
+}
+
+// Панель ходит в базу на каждый экран. Упавший запрос не должен ронять процесс,
+// который заодно отдаёт сайт: показываем ошибку страницей.
+async function handle(req, res) {
+  try {
+    return await route(req, res);
+  } catch (e) {
+    console.error('панель:', e.message);
+    if (res.headersSent) return true;
+    res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' });
+    res.end(shell('Ошибка', `<h1>Ошибка панели</h1><p class="sub">${esc(e.message)}</p><p><a href="/seo/">Назад</a></p>`));
+    return true;
+  }
 }
 
 module.exports = { handle };

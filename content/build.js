@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Генератор статических страниц базы знаний sasha-lab.
 //
-// Вход  — content/kb/*.md: одна страница = один файл с шапкой-метаданными.
+// Вход  — таблица materials (content/materials.js); на dev-копии без базы —
+//          content/kb/*.md: одна страница = один файл с шапкой-метаданными.
 // Выход — dist/: готовый статический HTML без единого запроса к базе,
 //          плюс sitemap.xml и robots.txt. Ровно то, что просят поисковики:
 //          быстрый семантический документ, а не div-каша конструктора.
@@ -10,9 +11,9 @@
 // посещению, значит генерировать её в рантайме незачем — и нечему падать.
 const fs = require('fs');
 const path = require('path');
+const materials = require('./materials');
 
 const ROOT = path.join(__dirname, '..');
-const KB = path.join(__dirname, 'kb');
 const OUT = path.join(ROOT, 'dist');
 const SITE = process.env.SITE_ORIGIN || 'https://sasha-lab.ru';
 
@@ -32,31 +33,6 @@ const RUBRICS = {
   zakon:    { title: 'Закон и техосмотр', slug: 'zakon',  hub: null },
   vybor:    { title: 'Выбор и эксплуатация', slug: 'vybor', hub: null },
 };
-
-// ── разбор исходников ──────────────────────────────────────────────────────
-function parseFile(file) {
-  const src = fs.readFileSync(file, 'utf8');
-  const m = src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!m) throw new Error(`${path.basename(file)}: нет шапки --- ... ---`);
-  const meta = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^(\w+):\s*(.*)$/);
-    if (!kv) continue;
-    let v = kv[2].trim();
-    if (v.startsWith('[') && v.endsWith(']')) {
-      v = v.slice(1, -1).split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    } else v = v.replace(/^["']|["']$/g, '');
-    meta[kv[1]] = v;
-  }
-  meta.file = path.basename(file);
-  if (!meta.slug) throw new Error(`${meta.file}: нет slug`);
-  if (!meta.title) throw new Error(`${meta.file}: нет title`);
-  if (!RUBRICS[meta.rubric]) throw new Error(`${meta.file}: неизвестная рубрика "${meta.rubric}"`);
-  meta.type = meta.type || 'question';
-  meta.tags = meta.tags || [];
-  meta.queries = meta.queries || [];
-  return { meta, body: m[2].trim() };
-}
 
 // ── микро-markdown (заголовки, списки, цитаты, ссылки, жирный) ─────────────
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -350,9 +326,11 @@ ${sections}`;
 }
 
 // ── сборка ─────────────────────────────────────────────────────────────────
-function build() {
-  const files = fs.existsSync(KB) ? fs.readdirSync(KB).filter((f) => f.endsWith('.md')) : [];
-  const docs = files.map((f) => parseFile(path.join(KB, f)));
+async function build() {
+  const docs = await materials.load();
+  for (const d of docs) {
+    if (!RUBRICS[d.meta.rubric]) throw new Error(`${d.meta.slug}: неизвестная рубрика "${d.meta.rubric}"`);
+  }
 
   const seen = new Set();
   for (const d of docs) {
@@ -420,6 +398,8 @@ function build() {
 }
 
 if (require.main === module) {
-  try { build(); } catch (e) { console.error('сборка упала:', e.message); process.exit(1); }
+  build()
+    .then(() => require('../seo/lib/db').enabled && require('../seo/lib/db').close())
+    .catch((e) => { console.error('сборка упала:', e.message); process.exit(1); });
 }
 module.exports = { build, RUBRICS, SITE };

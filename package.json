@@ -1,0 +1,18 @@
+{
+  "name": "sasha-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Зеркало sasha-lab.ru, база знаний и SEO-панель студии автосвета «Дядя Саша»",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "node content/build.js",
+    "migrate": "node db/migrate.js",
+    "import": "node db/import.js",
+    "seo": "node seo/cli.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "engines": { "node": ">=20" }
+}

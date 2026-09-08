@@ -2,6 +2,7 @@
 // Командная строка SEO-модуля. Ключи берутся из окружения (seo/.env.example).
 const jobs = require('./lib/jobs');
 const store = require('./lib/store');
+const db = require('./lib/db');
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -20,8 +21,10 @@ sasha-lab · SEO
   gaps [--min 30]           частотные фразы, под которые нет страницы
   report                    сводка
 
-Окружение: YANDEX_SEARCH_API_KEY, YANDEX_FOLDER_ID, YANDEX_WEBMASTER_TOKEN,
-GSC_KEY_FILE, GSC_SITE, SEO_DOMAIN.
+  questions [--status new]  очередь вопросов посетителей
+
+Окружение: SASHALAB_PG_URL (база), YANDEX_SEARCH_API_KEY, YANDEX_FOLDER_ID,
+YANDEX_WEBMASTER_TOKEN, GSC_KEY_FILE, GSC_SITE, SEO_DOMAIN.
 `;
 
 async function main() {
@@ -31,12 +34,12 @@ async function main() {
       const r = await jobs.collectWordstat(phrases.length ? phrases : undefined);
       for (const c of r.collected) console.log(`  ${c.seed}: всего ${c.total}, собрано фраз ${c.got}`);
       for (const e of r.errors) console.error(`  ! ${e.seed}: ${e.error}`);
-      console.log(`в базе фраз: ${Object.keys(store.keywords.all()).length}`);
+      console.log(`в базе фраз: ${await store.keywords.count()}`);
       break;
     }
     case 'positions': {
       const limit = Number(flag('limit', 30));
-      const phrases = Object.values(store.keywords.all())
+      const phrases = (await store.keywords.rows())
         .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0))
         .slice(0, limit).map((k) => k.phrase);
       if (!phrases.length) return console.error('нечего проверять: сначала «wordstat»');
@@ -58,13 +61,19 @@ async function main() {
       break;
     }
     case 'gaps': {
-      const rows = jobs.gaps({ minCount: Number(flag('min', 30)) });
+      const rows = await jobs.gaps({ minCount: Number(flag('min', 30)) });
       for (const r of rows) console.log(`  ${String(r.count || r.shows).padStart(7)}  ${r.phrase}`);
       console.log(`не закрыто страницами: ${rows.length}`);
       break;
     }
+    case 'questions': {
+      const rows = await require('./questions').list(flag('status', 'new'));
+      for (const q of rows) console.log(`  ${q.at.slice(0, 16).replace('T', ' ')}  ${q.status.padEnd(9)} ${q.name} — ${q.text.slice(0, 70)}`);
+      console.log(`всего: ${rows.length}`);
+      break;
+    }
     case 'report': {
-      console.log(JSON.stringify(jobs.summary(), null, 2));
+      console.log(JSON.stringify(await jobs.summary(), null, 2));
       break;
     }
     default:
@@ -72,4 +81,6 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error('ошибка:', e.message); process.exit(1); });
+main()
+  .then(() => db.enabled && db.close())
+  .catch((e) => { console.error('ошибка:', e.message); process.exit(1); });
