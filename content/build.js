@@ -129,7 +129,6 @@ ${noindex ? '<meta name="robots" content="noindex,follow">\n' : ''}<link rel="ca
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${SITE}${url}">
-<link rel="preconnect" href="/cdn">
 <link rel="stylesheet" href="/baza/style.css">
 <script type="application/ld+json">${JSON.stringify(ld)}</script>
 </head>
