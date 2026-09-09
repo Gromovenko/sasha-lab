@@ -36,13 +36,14 @@ YANDEX_WEBMASTER_TOKEN, GSC_KEY_FILE, GSC_SITE, SEO_DOMAIN.
 async function main() {
   switch (cmd) {
     case 'wordstat': {
-      const phrases = argv.slice(1).filter((a) => !a.startsWith('--'));
+      // Фразы — всё, что не флаг и не значение флага («--max 1» — не фраза «1»).
+      const phrases = argv.slice(1).filter((a, i, all) => !a.startsWith('--') && !(all[i - 1] || '').startsWith('--'));
       const r = await jobs.collectWordstat(phrases.length ? phrases : undefined,
         { force: argv.includes('--force'), maxCalls: Number(flag('max', undefined) ?? jobs.WORDSTAT_MAX_CALLS) });
       for (const c of r.collected) console.log(`  ${c.seed}: всего ${c.total}, собрано фраз ${c.got}`);
       for (const s of r.skipped) console.log(`  · ${s.seed}: пропущено — ${s.why}`);
       for (const e of r.errors) console.error(`  ! ${e.seed}: ${e.error}`);
-      console.log(`вызовов Wordstat: ${r.calls} (≈${r.rub} ₽), всего с начала: ${r.spend.calls} (≈${r.spend.rub} ₽)`);
+      console.log(`вызовов Wordstat: ${r.calls}, оплачено ${r.billed} (≈${r.rub} ₽), всего с начала: ${r.spend.calls} (≈${r.spend.rub} ₽)`);
       console.log(`в базе фраз: ${await store.keywords.count()}`);
       break;
     }

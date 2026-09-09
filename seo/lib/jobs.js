@@ -65,7 +65,8 @@ async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCal
   const errors = [];
   const skipped = [];
   const fresh = force ? new Set() : await wordstatFreshSeeds(WORDSTAT_TTL_DAYS);
-  let calls = 0;
+  let calls = 0;    // попыток (для потолка за прогон)
+  let billed = 0;   // удачных ответов — только они стоят денег
   for (const phrase of phrases) {
     if (fresh.has(phrase)) { skipped.push({ seed: phrase, why: `собрано < ${WORDSTAT_TTL_DAYS} дн. назад` }); continue; }
     if (calls >= maxCalls) { skipped.push({ seed: phrase, why: `потолок ${maxCalls} вызовов за прогон` }); continue; }
@@ -75,17 +76,18 @@ async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCal
       const rows = [...r.results, ...r.associations].map((x) => ({
         phrase: x.phrase, count: x.count, seed: phrase, checkedAt: today(),
       }));
+      billed += 1;
       await store.keywords.upsert(rows, 'wordstat');
       collected.push({ seed: phrase, total: r.totalCount, got: rows.length });
       await sleep(1100);                       // синхронный лимит — 1 запрос/с
     } catch (e) {
-      // Ошибка авторизации/сервера Яндексом не тарифицируется — но мы этого
-      // отсюда не различаем, считаем по верхней границе.
+      // Ошибки авторизации и сервера Яндекс не тарифицирует (тариф AI Studio) —
+      // ответа не было, в расход не идёт.
       errors.push({ seed: phrase, error: e.message });
     }
   }
-  const spend = calls ? await noteWordstatSpend(calls) : await store.kv.get('wordstat_spend', { calls: 0, rub: 0 });
-  return { collected, errors, skipped, calls, rub: calls * WORDSTAT_RUB_PER_CALL, spend };
+  const spend = billed ? await noteWordstatSpend(billed) : await store.kv.get('wordstat_spend', { calls: 0, rub: 0 });
+  return { collected, errors, skipped, calls, billed, rub: billed * WORDSTAT_RUB_PER_CALL, spend };
 }
 
 // ── позиции ────────────────────────────────────────────────────────────────
