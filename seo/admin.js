@@ -94,6 +94,12 @@ async function dashboard(msg) {
     .sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0)).slice(0, 40);
   const newQuestions = await questions.list('new');
   const lastRuns = await store.runs.last(5);
+  // Слой знаний: сбор источников, сео-память и очередь ассистента. Читаем мягко —
+  // панель не должна падать оттого, что миграция знаний ещё не накачена.
+  const soft = async (fn, def) => { try { return await fn(); } catch { return def; } };
+  const harvest = await soft(() => require('../harvest/store').stats(), { db: false });
+  const memQueue = await soft(() => require('./lib/memory').queue({ limit: 15 }), { new: [], strengthen: [] });
+  const noAnswer = await soft(() => require('./assistant').unanswered(15), []);
   const cls = (p) => !p ? 'miss' : p <= 3 ? 'top3' : p <= 10 ? 'top10' : '';
 
   const tiles = [
@@ -128,6 +134,29 @@ ${(() => {
     ${esc(x.name)}${x.car ? ` · ${esc(x.car)}` : ''} · ${esc(x.contact)}</p>${esc(x.text)}
     <p class="who"><a href="/seo/q?id=${esc(x.id)}">Ответить и опубликовать</a></p></div>`).join('');
 })()}
+
+<h2>Ассистент: вопросы без ответа</h2>
+${noAnswer.length ? `<table><tr><th>Вопрос</th><th>Режим</th><th class="num">Когда</th></tr>
+${noAnswer.map((r) => `<tr><td>${esc(r.text)}</td><td>${r.mode === 'pro' ? 'установщик' : 'клиент'}</td>
+<td class="num">${esc(new Date(r.created_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }))}</td></tr>`).join('')}</table>
+<p class="sub">Ассистент не нашёл ответа в базе — это и есть темы следующих материалов.</p>`
+  : '<p class="sub">Пусто: либо вопросов не было, либо на все нашёлся ответ. Помощник — <a href="/baza/pomoshnik/">/baza/pomoshnik/</a>.</p>'}
+
+<h2>Сео-память: усилить, а не плодить</h2>
+${memQueue.strengthen.length ? `<table><tr><th>Фраза</th><th class="num">Спрос</th><th>Дописать в страницу</th></tr>
+${memQueue.strengthen.map((r) => `<tr><td>${esc(r.phrase)}</td><td class="num">${r.demand ?? ''}</td>
+<td><a href="/baza/${esc(r.target_slug || '')}/">${esc(r.target_slug || '')}</a></td></tr>`).join('')}</table>`
+  : '<p class="sub">Память пуста: прогнать <code>node seo/cli.js memory</code> после сбора частотности.</p>'}
+
+<h2>База знаний из источников</h2>
+${harvest.db ? `<div class="tiles">${[
+  ['источников', harvest.sources], ['документов', harvest.documents],
+  ['не разобрано', harvest.unparsed], ['машин', harvest.vehicles],
+  ['комплектующих', harvest.parts], ['совместимостей', harvest.fitment],
+].map(([n, v]) => `<div class="tile"><b>${v}</b><span>${esc(n)}</span></div>`).join('')}</div>
+<p class="sub">Сбор запускается с сервера: <code>node harvest/run.js crawl works|parts|community</code>,
+затем <code>node harvest/run.js facts</code>. Чужие страницы не публикуются — из них берутся только факты.</p>`
+  : '<p class="sub">Слой знаний ещё не накачен (миграция 002).</p>'}
 
 <h2>Позиции</h2>
 ${pos.length ? `<table><tr><th>Запрос</th><th class="num">Позиция</th><th>Страница</th><th class="num">Снято</th></tr>

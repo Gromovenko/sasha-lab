@@ -14,10 +14,14 @@ const store = require('./store');
 
 // Известные семейства линз и модулей — то, что реально называют в работах.
 // Список правится руками: рынок узкий, новых имён появляется несколько в год.
+// Только имена ПРОИЗВОДИТЕЛЕЙ. Короткие обозначения моделей («A3+», «Q5», «G5»)
+// в список не входят намеренно: Q5 и A3 — это ещё и модели Audi, и текст «поставили
+// линзы в Audi Q5» давал бы факт «в Q5 ставят линзу Q5». Модель подхватывается
+// парой «производитель + следующий токен» в lenses() — там неоднозначности нет.
 const LENS = [
-  'aozoom', 'a3\\+?', 'a5\\+?', 'dragon knight', 'hella', 'koito', 'morimoto',
+  'aozoom', 'dragon knight', 'hella', 'koito', 'morimoto',
   'mtf', 'optima', 'dixel', 'sanvi', 'viper', 'zkw', 'valeo', 'bosch', 'sim-?tech',
-  'gtr', 'lumen', 'starled', 'zax', 'q5', 'g5', 'x-?bright', 'demon', 'cyclone',
+  'gtr', 'lumen', 'starled', 'zax', 'x-?bright', 'demon', 'cyclone',
 ];
 const LENS_RE = new RegExp(`(?<![a-zа-яё])(${LENS.join('|')})(?![a-zа-яё])`, 'gi');
 const SIZE_RE = /\b([23](?:[.,]\d)?)\s*(?:дюйм|")/i;

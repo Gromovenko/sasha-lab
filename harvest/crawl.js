@@ -27,7 +27,9 @@ async function sitemapUrls(host, ua, delayMs, seen = new Set()) {
     const isIndex = /<sitemapindex/i.test(r.body);
     for (const m of r.body.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) {
       const loc = html.decode(m[1]);
-      if (isIndex) { if (queue.length < 60) queue.push(loc); }
+      // Потолок на дочерние карты: у крупного каталога их бывают десятки,
+      // а каждая — ещё один поход к источнику с паузой.
+      if (isIndex) { if (queue.length < 25) queue.push(loc); }
       else out.push(loc);
     }
   }

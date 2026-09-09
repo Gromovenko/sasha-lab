@@ -309,7 +309,7 @@ ${r.hub ? `<p class="lead">Услуга целиком: <a href="${r.hub}">${esc
       body, jsonld: [localBusiness] }) };
 }
 
-function rootIndex(byRubric, total) {
+function rootIndex(byRubric, total, cars = []) {
   const sections = Object.keys(RUBRICS).filter((k) => byRubric[k] && byRubric[k].length).map((k) => {
     const r = RUBRICS[k];
     return `<section><h2><a href="/baza/${r.slug}/">${esc(r.title)}</a></h2><ul>${
@@ -320,6 +320,10 @@ function rootIndex(byRubric, total) {
 <p class="lead">Вопросы, которые нам задают в мастерской, и честные ответы мастеров.
 Без «оставьте заявку» вместо ответа. ${total} материалов.</p>
 ${askLink}
+${cars.length ? `<section><h2><a href="/baza/avto/">Свет по машинам</a></h2>
+<p>Что встаёт в фары конкретной модели: ${cars.slice(0, 6).map((v) =>
+  `<a href="/baza/avto/${v.slug}/">${esc(capMake(v.make))} ${esc(capMake(v.model))}</a>`).join(', ')}
+и ещё ${Math.max(0, cars.length - 6)}.</p></section>` : ''}
 ${sections}`;
   return { url: '/baza/', file: path.join('baza', 'index.html'),
     html: layout({ url: '/baza/', title: `База знаний по автосвету — студия «Дядя Саша», ${BIZ.city}`,
@@ -383,8 +387,8 @@ function vehiclePage(v, docs) {
 <p class="note">Данные без пометки «проверено студией» собраны из открытых источников
 и требуют осмотра конкретной фары: у одной модели за пару лет меняется и фара, и крепление.</p>
 <h2>Вскрывать фару или нет</h2>
-<p>Ответ зависит от того, что стоит с завода. Разбор способов и последствий —
-в материале <a href="/baza/linzy/ustanovka-linz-so-vskrytiem-fary/">про установку со вскрытием</a>.</p>
+<p>Ответ зависит от того, что стоит с завода${docs.some((d) => d.meta.slug === 'ustanovka-linz-so-vskrytiem-fary')
+    ? `. Разбор способов и последствий — в материале <a href="/baza/linzy/ustanovka-linz-so-vskrytiem-fary/">про установку со вскрытием</a>` : ''}.</p>
 ${relatedBlock(related)}
 ${askLink}
 </article>`;
@@ -426,12 +430,15 @@ async function build() {
   const byRubric = {};
   for (const d of docs) (byRubric[d.meta.rubric] ||= []).push(d);
 
+  // Машины считаем до сборки индексов: корневая страница базы знаний должна
+  // ссылаться на раздел, иначе он живёт только в sitemap и его никто не обходит.
+  const cars = await vehicleData();
+
   const pages = [];
   for (const d of docs) pages.push(d.meta.type === 'guide' ? guidePage(d, docs) : questionPage(d, docs));
   for (const k of Object.keys(byRubric)) pages.push(rubricIndex(k, byRubric[k]));
-  pages.push(rootIndex(byRubric, docs.length));
+  pages.push(rootIndex(byRubric, docs.length, cars));
   // Машины: страница появляется только там, где есть факты (см. MIN_FACTS).
-  const cars = await vehicleData();
   if (cars.length) {
     for (const v of cars) pages.push(vehiclePage(v, docs));
     pages.push(vehicleIndex(cars));
