@@ -11,6 +11,9 @@
 // посещению, значит генерировать её в рантайме незачем — и нечему падать.
 const fs = require('fs');
 const path = require('path');
+// Доступы лежат в seo/.env вне git; ни pm2, ни голый node их сами не читают,
+// а нужны они и серверу, и командам сборки — отсюда общий загрузчик.
+require('../server-env')(require('path').join(__dirname, '..', 'seo', '.env'));
 const materials = require('./materials');
 
 const ROOT = path.join(__dirname, '..');

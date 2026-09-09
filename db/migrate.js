@@ -3,6 +3,9 @@
 // раз. Своего фреймворка тут не заводим — файлы и таблица с отметками.
 const fs = require('fs');
 const path = require('path');
+// Доступы лежат в seo/.env вне git; ни pm2, ни голый node их сами не читают,
+// а нужны они и серверу, и командам — отсюда общий загрузчик.
+require('../server-env')(require('path').join(__dirname, '..', 'seo', '.env'));
 const db = require('../seo/lib/db');
 
 const DIR = path.join(__dirname, 'migrations');
