@@ -32,11 +32,45 @@ const SEEDS = [
 ];
 
 // ── частотность ────────────────────────────────────────────────────────────
-async function collectWordstat(phrases = SEEDS, { regions } = {}) {
+// Wordstat платный: GetTop = 20 ₽ за КАЖДЫЙ вызов (тариф AI Studio, 09.09.2026),
+// квота 100 вызовов в час. Кнопка «Собрать частотность» в панели дёргает все
+// сиды разом — поэтому три предохранителя:
+//   1. сид, собранный меньше WORDSTAT_TTL_DAYS назад, не запрашивается снова
+//      (Wordstat и так отдаёт срез за последние 30 дней — раньше цифры не сменятся);
+//   2. не больше WORDSTAT_MAX_CALLS вызовов за один прогон;
+//   3. каждый вызов пишется в kv «wordstat_spend» — панель и cli показывают,
+//      сколько рублей уже ушло, а не только «собрано фраз».
+const WORDSTAT_RUB_PER_CALL = 20;
+const WORDSTAT_TTL_DAYS = Number(process.env.WORDSTAT_TTL_DAYS || 30);
+const WORDSTAT_MAX_CALLS = Number(process.env.WORDSTAT_MAX_CALLS || 10);
+
+async function wordstatFreshSeeds(ttlDays) {
+  const rs = await store.db.q(
+    `SELECT seed FROM keywords WHERE source='wordstat' AND seed IS NOT NULL
+       GROUP BY seed HAVING max(checked_at) > current_date - $1::int`, [ttlDays]);
+  return new Set(rs.map((r) => r.seed));
+}
+
+async function noteWordstatSpend(calls) {
+  const cur = (await store.kv.get('wordstat_spend', null)) || { calls: 0, rub: 0 };
+  cur.calls += calls;
+  cur.rub += calls * WORDSTAT_RUB_PER_CALL;
+  cur.last = new Date().toISOString();
+  await store.kv.set('wordstat_spend', cur);
+  return cur;
+}
+
+async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCalls = WORDSTAT_MAX_CALLS } = {}) {
   const collected = [];
   const errors = [];
+  const skipped = [];
+  const fresh = force ? new Set() : await wordstatFreshSeeds(WORDSTAT_TTL_DAYS);
+  let calls = 0;
   for (const phrase of phrases) {
+    if (fresh.has(phrase)) { skipped.push({ seed: phrase, why: `собрано < ${WORDSTAT_TTL_DAYS} дн. назад` }); continue; }
+    if (calls >= maxCalls) { skipped.push({ seed: phrase, why: `потолок ${maxCalls} вызовов за прогон` }); continue; }
     try {
+      calls += 1;
       const r = await yandex.wordstatTop(phrase, regions ? { regions } : {});
       const rows = [...r.results, ...r.associations].map((x) => ({
         phrase: x.phrase, count: x.count, seed: phrase, checkedAt: today(),
@@ -45,10 +79,13 @@ async function collectWordstat(phrases = SEEDS, { regions } = {}) {
       collected.push({ seed: phrase, total: r.totalCount, got: rows.length });
       await sleep(1100);                       // синхронный лимит — 1 запрос/с
     } catch (e) {
+      // Ошибка авторизации/сервера Яндексом не тарифицируется — но мы этого
+      // отсюда не различаем, считаем по верхней границе.
       errors.push({ seed: phrase, error: e.message });
     }
   }
-  return { collected, errors };
+  const spend = calls ? await noteWordstatSpend(calls) : await store.kv.get('wordstat_spend', { calls: 0, rub: 0 });
+  return { collected, errors, skipped, calls, rub: calls * WORDSTAT_RUB_PER_CALL, spend };
 }
 
 // ── позиции ────────────────────────────────────────────────────────────────
@@ -156,4 +193,4 @@ async function summary() {
   };
 }
 
-module.exports = { SEEDS, collectWordstat, checkPositions, pullWebmaster, pullGsc, gaps, summary, coverage, DOMAIN };
+module.exports = { SEEDS, WORDSTAT_RUB_PER_CALL, WORDSTAT_MAX_CALLS, collectWordstat, checkPositions, pullWebmaster, pullGsc, gaps, summary, coverage, DOMAIN };

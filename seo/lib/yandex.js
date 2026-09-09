@@ -49,9 +49,10 @@ function post(pathname, body, key) {
 // Ростов-на-Дону = регион 39, Ростовская область = 11029 (Wordstat/geo Яндекса).
 const ROSTOV = ['39'];
 
-// Топ запросов, содержащих фразу, за последние 30 дней.
+// Топ запросов, содержащих фразу, за последние 30 дней. Платно: 20 ₽ за вызов.
+// Сервис отдаёт не больше 250 результатов, просить больше бессмысленно.
 // → { totalCount, results:[{phrase,count}], associations:[{phrase,count}] }
-async function wordstatTop(phrase, { regions = ROSTOV, numPhrases = 300, devices } = {}) {
+async function wordstatTop(phrase, { regions = ROSTOV, numPhrases = 250, devices } = {}) {
   const { key, folderId } = creds();
   const body = { phrase, numPhrases, folderId };
   if (regions && regions.length) body.regions = regions;

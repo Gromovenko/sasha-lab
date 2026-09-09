@@ -16,6 +16,7 @@ const HELP = `
 sasha-lab · SEO
 
   wordstat [фраза ...]      частотность по фразам (по умолчанию — базовый список)
+                            20 ₽/вызов; --force (игнорировать 30-дн. кэш), --max N
   positions [--limit 30]    снять позиции по самым частотным фразам
   webmaster [--from --to]   реальные запросы сайта из Яндекс.Вебмастера
   gsc [--from --to]         реальные запросы сайта из Google Search Console
@@ -36,9 +37,12 @@ async function main() {
   switch (cmd) {
     case 'wordstat': {
       const phrases = argv.slice(1).filter((a) => !a.startsWith('--'));
-      const r = await jobs.collectWordstat(phrases.length ? phrases : undefined);
+      const r = await jobs.collectWordstat(phrases.length ? phrases : undefined,
+        { force: argv.includes('--force'), maxCalls: Number(flag('max', undefined) ?? jobs.WORDSTAT_MAX_CALLS) });
       for (const c of r.collected) console.log(`  ${c.seed}: всего ${c.total}, собрано фраз ${c.got}`);
+      for (const s of r.skipped) console.log(`  · ${s.seed}: пропущено — ${s.why}`);
       for (const e of r.errors) console.error(`  ! ${e.seed}: ${e.error}`);
+      console.log(`вызовов Wordstat: ${r.calls} (≈${r.rub} ₽), всего с начала: ${r.spend.calls} (≈${r.spend.rub} ₽)`);
       console.log(`в базе фраз: ${await store.keywords.count()}`);
       break;
     }

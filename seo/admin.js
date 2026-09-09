@@ -100,6 +100,7 @@ async function dashboard(msg) {
   const harvest = await soft(() => require('../harvest/store').stats(), { db: false });
   const memQueue = await soft(() => require('./lib/memory').queue({ limit: 15 }), { new: [], strengthen: [] });
   const noAnswer = await soft(() => require('./assistant').unanswered(15), []);
+  const spend = await soft(() => store.kv.get('wordstat_spend', null), null);
   const cls = (p) => !p ? 'miss' : p <= 3 ? 'top3' : p <= 10 ? 'top10' : '';
 
   const tiles = [
@@ -117,6 +118,7 @@ ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
 <div class="tiles">${tiles}</div>
 <p>
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="wordstat"><button class="act">Собрать частотность</button></form>
+  <span class="sub">Wordstat платный: ${jobs.WORDSTAT_RUB_PER_CALL} ₽ за корневую фразу, не чаще раза в 30 дней на фразу, до ${jobs.WORDSTAT_MAX_CALLS} за прогон${spend ? `; потрачено ≈${spend.rub} ₽ (${spend.calls} вызов.)` : ''}.</span>
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="positions"><button class="act">Снять позиции</button></form>
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="webmaster"><button class="act">Из Вебмастера</button></form>
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="gsc"><button class="act">Из Search Console</button></form>
