@@ -21,13 +21,14 @@ const append = (name, obj) => fs.appendFileSync(file(name), JSON.stringify(obj) 
 async function ensureSource(src) {
   if (!db.enabled) return { id: null, ...src };
   const row = await db.one(`
-    INSERT INTO sources (host, kind, title, delay_ms, max_pages, robots_note, note)
-    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    INSERT INTO sources (host, kind, title, delay_ms, max_pages, robots_note, note, enabled)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
     ON CONFLICT (host) DO UPDATE SET kind = EXCLUDED.kind, title = EXCLUDED.title,
-      delay_ms = EXCLUDED.delay_ms, max_pages = EXCLUDED.max_pages
+      delay_ms = EXCLUDED.delay_ms, max_pages = EXCLUDED.max_pages,
+      note = COALESCE(EXCLUDED.note, sources.note), enabled = EXCLUDED.enabled
     RETURNING *`,
     [src.host, src.kind, src.title || src.host, src.delayMs || 3000, src.maxPages || 300,
-      src.robotsNote || null, src.note || null]);
+      src.robotsNote || null, src.note || null, src.enabled !== false]);
   return row;
 }
 
@@ -63,9 +64,22 @@ const knownUrls = async (sourceId) => (!db.enabled || !sourceId) ? new Set()
   : new Set((await db.q('SELECT url FROM documents WHERE source_id = $1', [sourceId])).map((r) => r.url));
 
 const unparsed = async (limit = 500) => !db.enabled ? []
-  : db.q(`SELECT id, url, title, text, source_id FROM documents
+  : db.q(`SELECT id, url, title, text, source_id, meta FROM documents
           WHERE parsed_at IS NULL AND text IS NOT NULL AND skip_reason IS NULL
           ORDER BY id LIMIT $1`, [limit]);
+
+// Пересчёт фактов с нуля: правило разбора поправили — черновые факты надо
+// вывести заново, иначе старые ошибки («линза q5 8r» из модели Audi) живут
+// в базе вечно, потому что документ помечен разобранным. Подтверждённое
+// студией не трогаем: это единственный факт, который дороже любого правила.
+async function resetFacts() {
+  if (!db.enabled) return;
+  await db.q(`DELETE FROM fitment WHERE status <> 'confirmed'`);
+  await db.q(`DELETE FROM parts`);
+  await db.q(`DELETE FROM vehicles v WHERE NOT EXISTS (SELECT 1 FROM fitment f WHERE f.vehicle_id = v.id)`);
+  await db.q(`UPDATE vehicles SET mentions = 0`);
+  await db.q(`UPDATE documents SET parsed_at = NULL`);
+}
 
 const markParsed = async (ids) => {
   if (db.enabled && ids.length) await db.q('UPDATE documents SET parsed_at = now() WHERE id = ANY($1)', [ids]);
@@ -137,5 +151,5 @@ async function stats() {
   return { db: true, ...s };
 }
 
-module.exports = { ensureSource, touchSource, saveDocument, knownUrls, unparsed, markParsed,
+module.exports = { ensureSource, touchSource, saveDocument, knownUrls, unparsed, markParsed, resetFacts,
   upsertVehicle, upsertPart, upsertFitment, stats, OUT, sha1 };

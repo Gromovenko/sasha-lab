@@ -43,10 +43,15 @@ const SOURCES = [
     seeds: ['https://steklafar.ru/'], include: /./, delayMs: 4000, maxPages: 300 },
 
   // ── этап 3: сообщество ───────────────────────────────────────────────────
-  // Drive2 стоит за DDoS-Guard: на «ботовый» User-Agent приходит js-челлендж
-  // вместо страницы, а robots.txt недоступен вовсе. Отсюда браузерный UA,
-  // увеличенная пауза и жёсткий потолок страниц: мы гости, а не нагрузка.
-  { host: 'www.drive2.ru', kind: 'community', title: 'Drive2',
+  // Drive2 ВЫКЛЮЧЕН (09.09.2026): robots.txt отдаёт «User-Agent: * / Disallow: /» —
+  // полный запрет всем, кроме поимённо разрешённых поисковиков. Утром того же дня
+  // вместо robots приходил js-челлендж DDoS-Guard, и заход обходом казался
+  // возможным; при живом запрете обходить его — значит подставить студию
+  // (претензия от Drive2 идёт на сайт, чей адрес стоит в User-Agent) и всё равно
+  // получить бан через день. Знание Drive2 берём иначе: ссылки на конкретные
+  // записи мастер кладёт руками (в очередь материалов), либо Search API отдаёт
+  // сниппеты по фразе — они индексируются поисковиками с разрешения площадки.
+  { host: 'www.drive2.ru', kind: 'community', title: 'Drive2', enabled: false,
     seeds: [
       'https://www.drive2.ru/experience/',
       'https://www.drive2.ru/search/?q=%D0%B1%D0%B8%D0%BB%D0%B5%D0%B4+%D0%BB%D0%B8%D0%BD%D0%B7%D1%8B',
@@ -54,7 +59,7 @@ const SOURCES = [
     ],
     include: /\/(l|b|c)\//,          // записи бортжурналов и посты
     ua: BROWSER_UA, delayMs: 8000, maxPages: 200,
-    note: 'DDoS-Guard: robots.txt недоступен, ходим браузерным UA, пауза 8 с, потолок 200 страниц' },
+    note: 'robots.txt: Disallow: / для всех — автоматический сбор запрещён площадкой (проверено 09.09.2026)' },
 ];
 
 const byHost = (host) => SOURCES.find((s) => s.host === host || s.host === `www.${host}`);

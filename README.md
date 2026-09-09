@@ -184,7 +184,8 @@ node content/build.js && pm2 restart sasha-lab   # страницы /baza/avto/ 
 Чужие страницы лежат в `documents` как рабочий материал и **не публикуются**:
 на сайт идут только свои формулировки и факты (`vehicles`, `parts`, `fitment`).
 
-Спрос на автомате — одной командой, в cron раз в неделю:
+Спрос на автомате — одной командой; на RU стоит в cron вместе со сбором
+источников (`scripts/harvest-cron.sh`, вс 03:00 МСК, лог `/var/log/sashalab-harvest.log`):
 
 ```bash
 npm run seo demand    # Wordstat + Вебмастер + GSC → keywords → сео-память (intents)

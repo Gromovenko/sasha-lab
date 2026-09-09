@@ -13,8 +13,12 @@ exec >> "$LOG" 2>&1
 echo "=== $(TZ=Europe/Moscow date '+%F %H:%M МСК') сбор базы знаний"
 
 # Каждый источник отдельной командой: упавший не должен уносить остальные.
+# Потолок страниц на источник за заход: еженедельно 60 (догоняем новое),
+# первичное наполнение — HARVEST_LIMIT=400 разово руками. Drive2 в реестре
+# выключен (robots.txt запрещает сбор) — команда это скажет и пойдёт дальше.
+LIMIT="${HARVEST_LIMIT:-60}"
 for what in works parts community; do
-  timeout 3600 node harvest/run.js crawl "$what" --limit 60 || echo "  ! этап $what не доехал"
+  timeout 14400 node harvest/run.js crawl "$what" --limit "$LIMIT" || echo "  ! этап $what не доехал"
 done
 timeout 1800 node harvest/run.js facts || echo '  ! разбор фактов упал'
 node harvest/run.js stats

@@ -67,7 +67,10 @@ function lenses(text) {
   const hits = [...new Set([...text.matchAll(LENS_RE)].map((m) => m[1].toLowerCase()))];
   const pairs = new Set();
   for (const m of text.matchAll(new RegExp(`(?<![a-zа-яё])(${LENS.join('|')})\\s+([a-z0-9][a-z0-9+.-]{0,9})`, 'gi'))) {
-    const [, brand, model] = m;
+    const [, brand, raw] = m;
+    // «Hella 3R.» в конце предложения — точка не часть модели.
+    const model = raw.replace(/[.,;:-]+$/, '');
+    if (!model) continue;
     if (hits.includes(model.toLowerCase()) || /^[a-z]?\d/i.test(model)) {
       pairs.add(`${brand.toLowerCase()} ${model.toLowerCase()}`);
     }
@@ -126,7 +129,8 @@ function parseDoc(doc) {
 }
 
 // Прогон по неразобранным документам. Возвращает статистику.
-async function run({ limit = 500 } = {}) {
+async function run({ limit = 500, reparse = false } = {}) {
+  if (reparse) await store.resetFacts();
   const docs = await store.unparsed(limit);
   const stat = { docs: docs.length, vehicles: 0, fitment: 0, parts: 0 };
   const slugToId = new Map();

@@ -26,7 +26,7 @@ const MAKES = [
   ['hyundai', 'хендай|хёндай|хундай|hyundai'], ['kia', 'киа|kia'],
   ['volkswagen', 'фольксваген|вольксваген|volkswagen|vw'],
   ['skoda', 'шкода|skoda|škoda'], ['audi', 'ауди|audi'],
-  ['bmw', 'бмв|bmw'], ['mercedes', 'мерседес|mercedes|mercedes-benz'],
+  ['bmw', 'бмв|bmw'], ['mercedes', 'мерседес-бенц|мерседес|mercedes-benz|mercedes'],
   ['opel', 'опель|opel'], ['ford', 'форд|ford'], ['chevrolet', 'шевроле|chevrolet'],
   ['renault', 'рено|renault'], ['peugeot', 'пежо|peugeot'], ['citroen', 'ситроен|citroen|citroën'],
   ['volvo', 'вольво|volvo'], ['land-rover', 'ленд ровер|land\\s?rover'],
@@ -34,7 +34,20 @@ const MAKES = [
   ['lada', 'лада|lada|ваз'], ['uaz', 'уаз|uaz'], ['gaz', 'газель|gaz'],
   ['datsun', 'датсун|datsun'], ['ssangyong', 'санг\\s?йонг|ssangyong'],
   ['great-wall', 'great\\s?wall'], ['suzuki', 'сузуки|suzuki'],
+  // Реже в работе, но стоят в меню каталогов между массовыми — без них имя
+  // соседней марки прилипало к модели («Lexus Lifan Lincoln Maserati»).
+  ['jaguar', 'ягуар|jaguar'], ['cadillac', 'кадиллак|cadillac'], ['lincoln', 'линкольн|lincoln'],
+  ['genesis', 'дженезис|genesis'], ['mini', 'mini'], ['fiat', 'фиат|fiat'], ['seat', 'seat'],
+  ['dodge', 'додж|dodge'], ['chrysler', 'крайслер|chrysler'], ['acura', 'акура|acura'],
+  ['tesla', 'тесла|tesla'], ['lifan', 'лифан|lifan'], ['daewoo', 'дэу|daewoo'],
+  ['isuzu', 'исузу|isuzu'], ['maserati', 'мазерати|maserati'], ['alfa-romeo', 'альфа\\s?ромео|alfa\\s?romeo'],
+  ['saab', 'сааб|saab'], ['smart', 'smart'], ['bentley', 'бентли|bentley'], ['iveco', 'iveco'],
+  ['brilliance', 'brilliance'], ['zotye', 'zotye'], ['ravon', 'равон|ravon'], ['haima', 'haima'],
+  ['foton', 'foton'], ['baic', 'baic'], ['ora', 'ora'], ['wey', 'wey'], ['nio', 'nio'], ['xpeng', 'xpeng'],
+  ['avatr', 'avatr'], ['denza', 'denza'], ['aito', 'aito'], ['seres', 'seres'], ['leapmotor', 'leapmotor'],
 ];
+// Слова каталогов, которые стоят рядом с марками, но машиной не являются.
+const NOISE = /^(vag|тюнинг|opt|оптика|light|lights|авто|auto|cars?)$/i;
 
 // Границу слова НЕ берём через \b: в JS он опирается на латиницу, и перед «Тойота»
 // границы нет вовсе — кириллические марки просто не находились. Отсюда явные
@@ -59,8 +72,15 @@ function makeOf(word) {
 // в справочник приезжают «haval фары» и «kia линзы» как отдельные машины.
 const STOP = new RegExp('^(фар|фары|фарах|фару|фар[аеиоуы]?|линз|линзы|линз[аеуы]?|би|bi|led|лед|ксенон|'
   + 'галоген|стекл|стекло|ремонт|установк|тюнинг|полировк|бронировани|модуль|блок|лампа|лампы|'
-  + 'цена|отзыв|купить|для|под|на|в|с|и|или|а|но|это|все|весь|владелец|машин|авто|автомобил|'
-  + 'привет|всем|доброго|сегодня|вчера|вот|как|что|где|когда|почему|можно|нужно)$', 'i');
+  + 'цена|цены|цен|price|отзыв|купить|для|под|на|в|с|и|или|а|но|это|все|весь|владелец|машин|авто|автомобил|'
+  + 'привет|всем|доброго|сегодня|вчера|вот|как|что|где|когда|почему|можно|нужно|'
+  // навигация каталогов: «Назад Kia Carens», «Показать все», «Далее», «Каталог»
+  + 'назад|показать|далее|ещё|еще|каталог|главная|меню|поиск|корзина|скрыть|подробнее|'
+  + 'выбрать|выберите|фильтр|сортировка|наличие|заказ|доставка|new|sale|hot)$', 'i');
+
+// «A3 A4», «Q5 Q7», «T6 T8», «S60 S60»: две модели одного вида подряд — это
+// перечисление из меню каталога, а не имя машины. Второй такой токен отрезаем.
+const SHORT_MODEL = /^[A-Za-z]{1,2}-?\d{1,3}[A-Za-z]?$/;
 
 // Модель: первый токен — слово, следующие два могут быть цифрой или приставкой
 // («tiggo 7 pro», «camry 70», «tank 300»). Годы отсекаются ниже отдельно.
@@ -71,7 +91,12 @@ const HEAD = `[${LET}][${LET}0-9-]{0,14}`;
 const TAIL = `(?:[0-9][0-9A-Za-z-]{0,9}|[A-Za-z][A-Za-z0-9-]{0,14})`;
 // Разделитель — пробел или таб, но НЕ перевод строки: иначе имя склеивается через
 // границу абзаца («Линзы в Audi Q5\nAudi Q5 2015» давало модель «Q5 Audi Q5»).
-const MODEL_RE = new RegExp(`^[ \t]*(${HEAD}(?:[ \t]+${TAIL}){0,2})`);
+// Между маркой и моделью в заголовках каталогов бывает стрелка или двоеточие:
+// «Переходные рамки → Audi → A3», «Kia: Rio» — пропускаем такой разделитель.
+const MODEL_RE = new RegExp(`^[ \t]*(?:(?:→|->|»|>|:|/|\\|)[ \t]*)?(${HEAD}(?:[ \t]+${TAIL}){0,2})`);
+// После короткой модели («A6», «CX-7», «Q7») хвост допустим только как поколение
+// или известная приставка; иначе «CX-7 A-class» из меню становится машиной.
+const GEN_TAIL = /^(?:[A-Za-z]{0,2}\d{1,3}[A-Za-z]?|[IVX]{1,4}|FL|NG|Pro|Max|Plus|Cross|Sport|Allroad|Avant|Sportback|Coupe|Cabrio|Touring|Long|GT|RS|AMG|Hybrid|Turbo|Rest|Restyle)$/i;
 
 // Год либо диапазон рядом с упоминанием: «2021», «2019-2023», «2021 г.в.»
 const YEAR_RE = /\b(19[89]\d|20[0-3]\d)\s*(?:[-–—]\s*(19[89]\d|20[0-3]\d))?\s*(?:г\.?\s*в\.?|год|г\.)?/;
@@ -86,16 +111,34 @@ function detect(text) {
     const tail = s.slice(m.index + m[1].length, m.index + m[1].length + 60);
     const mm = tail.match(MODEL_RE);
     let model = mm ? mm[1].trim() : '';
+    // Имя другой марки внутри модели (в том числе из двух слов — «Land Rover»):
+    // это список марок из меню, режем на нём.
+    const other = model.search(new RegExp(MAKE_RE.source, 'i'));
+    if (other >= 0) model = model.slice(0, other);
     // отрезаем хвост после стоп-слова: «tiggo 7 pro фары» → «tiggo 7 pro»
     const parts = [];
     for (const p of model.split(/\s+/)) {
       if (STOP.test(p)) break;
       if (/(?:19|20)\d{2}/.test(p)) break;    // «Kia Rio 2015», «Rio 2015-2019» — год, не имя
+      // Имя другой марки внутри модели — список марок из меню («MAZDA CX-4 MAZDA
+      // CX-5», «BMW MERCEDES VAG AUDI»): режем на нём.
+      if (makeOf(p) || NOISE.test(p)) break;
+      if (parts.length && SHORT_MODEL.test(parts[0])) {
+        const head = parts[0].toLowerCase(); const tok = p.toLowerCase();
+        // «S60 S60» — повтор; «A3 A4», «Q5 Q7» — соседние модели одной буквы;
+        // «A6 C8», «X5 F15», «Q7 2» — поколение, оставляем.
+        if (tok === head) break;
+        if (/^[a-z]\d$/.test(head) && /^[a-z]\d$/.test(tok) && head[0] === tok[0]) break;
+        if (!GEN_TAIL.test(p)) break;
+      }
       parts.push(p);
     }
     model = parts.join(' ').replace(/[-–—,.:;]+$/, '').trim();
     if (!model || model.length < 2) continue;
     if (/^\d{4}$/.test(model)) continue;                 // «kia 2021» — это не модель
+    // Кириллическое имя из одной-двух букв или с заглавной посреди фразы — не модель
+    // («Kia и», «Audi Не»); настоящие кириллические модели длиннее (Веста, Гранта).
+    if (/^[А-Яа-яЁё]/.test(model) && model.split(' ')[0].length < 4) continue;
 
     // Год ищем в узком окне вокруг упоминания: широкое окно тащило год соседней
     // машины из того же абзаца и приписывало его всем подряд.

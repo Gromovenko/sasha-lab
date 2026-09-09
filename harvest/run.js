@@ -32,6 +32,7 @@ sasha-lab · сбор базы знаний
   tg <канал> [--pages 10]    телеграм: публичное превью t.me/s/
   tg-import <result.json> [--channel имя]
   facts [--limit 500]        разбор скачанного в машины/комплектующие/совместимость
+  facts --reparse            пересчитать черновые факты с нуля (после правки правил)
   stats                      что накоплено
 
 Окружение: SASHALAB_PG_URL (без неё сбор пишет NDJSON в .harvest-out и говорит об этом).
@@ -47,7 +48,7 @@ async function main() {
       for (const s of SOURCES) {
         const r = await http.robots(s.host, s.ua);
         const dis = r.disallow.length ? `запрещено путей: ${r.disallow.length}` : 'запретов нет';
-        console.log(`  ${s.kind.padEnd(9)} ${s.host.padEnd(20)} пауза ${s.delayMs} мс, ${dis}`
+        console.log(`  ${s.kind.padEnd(9)} ${s.host.padEnd(20)} ${s.enabled === false ? 'ВЫКЛЮЧЕН, ' : ''}пауза ${s.delayMs} мс, ${dis}`
           + (s.note ? `\n${' '.repeat(12)}⚠ ${s.note}` : ''));
       }
       break;
@@ -59,6 +60,7 @@ async function main() {
       if (!list.length) return console.error(`не знаю источник «${what}», см. sources`);
       const limit = Number(flag('limit', 0)) || undefined;
       for (const s of list) {
+        if (s.enabled === false) { console.log(`  ${s.host}: выключен — ${s.note || 'см. sources'}`); continue; }
         const t = Date.now();
         const st = await crawl.crawlSource(s, { limit, refetch: argv.includes('--refetch') });
         console.log(`  ${st.host}: в sitemap ${st.listed}, скачано ${st.fetched}, `
@@ -78,7 +80,7 @@ async function main() {
       break;
     }
     case 'facts': {
-      const st = await facts.run({ limit: Number(flag('limit', 500)) });
+      const st = await facts.run({ limit: Number(flag('limit', 500)), reparse: argv.includes('--reparse') });
       console.log(`  разобрано документов ${st.docs}: машин ${st.vehicles}, `
         + `совместимостей ${st.fitment}, комплектующих ${st.parts}`);
       break;
