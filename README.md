@@ -112,6 +112,8 @@ ssh -i /root/.ssh/ru_key root@10.10.0.2 'cd /opt/sasha-lab && npm install --omit
   порядок шагов, что нужно от владельца.
 - [SEO-PLAN.md](SEO-PLAN.md) — поисковая часть: разбор исходной задачи, почему
   форум с выдуманными пользователями не делается, какие источники подключены.
+- [KNOWLEDGE-PLAN.md](KNOWLEDGE-PLAN.md) — сбор спроса по API, база знаний из
+  внешних источников (три этапа), сео-память и ассистент в двух версиях.
 
 ## SEO-контур (08.09.2026)
 
@@ -159,3 +161,36 @@ ssh -i /root/.ssh/ru_key root@10.10.0.2 \
 
 Вопросы посетителей в git не едут вовсе и в файлах больше не лежат: телефоны,
 почты и IP живых людей — только в базе на RU.
+
+## База знаний из внешних источников (09.09.2026)
+
+Подробности и правовые границы — [KNOWLEDGE-PLAN.md](KNOWLEDGE-PLAN.md).
+Раннбук (запускать на RU, где база):
+
+```bash
+cd /opt/sasha-lab
+node harvest/run.js sources               # что за источники и что им разрешает robots.txt
+node harvest/run.js crawl works  --limit 60
+node harvest/run.js crawl parts  --limit 60
+node harvest/run.js crawl community --limit 40   # Drive2, медленно: пауза 8 с
+node harvest/run.js tg <канал> --pages 30        # телеграм-канал (публичное превью)
+node harvest/run.js facts                        # разбор в машины/комплектующие/совместимость
+node harvest/run.js stats
+node content/build.js && pm2 restart sasha-lab   # страницы /baza/avto/ пересобираются отсюда
+```
+
+Сбор идёт медленно намеренно: пауза на источник, потолок страниц за заход,
+разбор robots.txt. Быстрее — значит быть закрытым на второй день.
+Чужие страницы лежат в `documents` как рабочий материал и **не публикуются**:
+на сайт идут только свои формулировки и факты (`vehicles`, `parts`, `fitment`).
+
+Спрос на автомате — одной командой, в cron раз в неделю:
+
+```bash
+npm run seo demand    # Wordstat + Вебмастер + GSC → keywords → сео-память (intents)
+npm run seo queue     # что писать дальше и что усилить, вместо новых дублей
+```
+
+Ассистент базы знаний: страница `/baza/pomoshnik/`, ручки `POST /baza/assistant`
+и `GET /baza/podbor?make=&model=&year=`. Два режима — владелец машины и
+установщик. Без `NEURALDEEP_API_KEY` отвечает выдержками из базы, не выдумывая.

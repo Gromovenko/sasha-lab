@@ -110,3 +110,11 @@ form.ask button{
 }
 form.ask button:hover{filter:brightness(1.08)}
 .note{color:var(--dim); font-size:14px}
+
+/* Страницы по машинам: таблица совместимости и список моделей. */
+table.fit{width:100%; border-collapse:collapse; margin:18px 0; font-size:15px}
+table.fit th, table.fit td{border-top:1px solid #2a2c33; padding:8px 6px; text-align:left; vertical-align:top}
+table.fit th{color:var(--dim); font-weight:600}
+ul.list{columns:2; column-gap:28px; padding-left:18px}
+ul.list li{break-inside:avoid; margin:4px 0}
+@media (max-width:640px){ ul.list{columns:1} table.fit{font-size:14px} }

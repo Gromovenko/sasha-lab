@@ -9,7 +9,8 @@
     "build": "node content/build.js",
     "migrate": "node db/migrate.js",
     "import": "node db/import.js",
-    "seo": "node seo/cli.js"
+    "seo": "node seo/cli.js",
+    "harvest": "node harvest/run.js"
   },
   "dependencies": {
     "pg": "^8.13.1"

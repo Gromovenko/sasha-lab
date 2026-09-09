@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Командная строка SEO-модуля. Ключи берутся из окружения (seo/.env.example).
+require('../server-env')(require('path').join(__dirname, '.env'));
 const jobs = require('./lib/jobs');
 const store = require('./lib/store');
 const db = require('./lib/db');
@@ -20,6 +21,10 @@ sasha-lab · SEO
   gsc [--from --to]         реальные запросы сайта из Google Search Console
   gaps [--min 30]           частотные фразы, под которые нет страницы
   report                    сводка
+
+  memory                    прогнать семантику через сео-память (одна фраза — один адрес)
+  queue [--limit 20]        что писать дальше: новые страницы и что усилить
+  demand [--limit 30]       ⟳ полный цикл спроса: Wordstat + GSC + Вебмастер → память
 
   questions [--status new]  очередь вопросов посетителей
 
@@ -70,6 +75,47 @@ async function main() {
       const rows = await require('./questions').list(flag('status', 'new'));
       for (const q of rows) console.log(`  ${q.at.slice(0, 16).replace('T', ' ')}  ${q.status.padEnd(9)} ${q.name} — ${q.text.slice(0, 70)}`);
       console.log(`всего: ${rows.length}`);
+      break;
+    }
+    case 'memory': {
+      const mem = require('./lib/memory');
+      const mats = (await require('../content/materials').load()).map((m) => m.meta);
+      const kws = await store.keywords.rows();
+      if (!kws.length) return console.error('семантики нет: сначала «wordstat» или «gsc»');
+      const r = await mem.sync(mats, kws);
+      console.log(`  фраз ${r.items.length}: уже закрыто ${r.covered}, `
+        + `дописать в существующие ${r.strengthen}, заслуживают своей страницы ${r.new}`);
+      break;
+    }
+    case 'queue': {
+      const mem = require('./lib/memory');
+      const q = await mem.queue({ limit: Number(flag('limit', 20)) });
+      console.log('НОВЫЕ СТРАНИЦЫ (нет своего адреса):');
+      for (const r of q.new) console.log(`  ${String(r.demand ?? '—').padStart(7)}  ${r.phrase}`);
+      console.log('УСИЛИТЬ СУЩЕСТВУЮЩИЕ (не плодить дубли):');
+      for (const r of q.strengthen) console.log(`  ${String(r.demand ?? '—').padStart(7)}  ${r.phrase}  →  /baza/${r.target_slug}/`);
+      break;
+    }
+    // Полный цикл «изменение спроса на автомате»: источники → семантика → память.
+    // Ставится в cron раз в неделю; каждый шаг падает по отдельности и не роняет
+    // остальные — данные Вебмастера не должны теряться из-за просроченного ключа Google.
+    case 'demand': {
+      const mem = require('./lib/memory');
+      const runId = await store.runs.start('demand');
+      const stats = {};
+      for (const [name, fn] of [
+        ['wordstat', () => jobs.collectWordstat()],
+        ['webmaster', () => jobs.pullWebmaster({})],
+        ['gsc', () => jobs.pullGsc({})],
+      ]) {
+        try { const r = await fn(); stats[name] = Array.isArray(r) ? r.length : r.collected?.length ?? 0; }
+        catch (e) { stats[name] = `ошибка: ${e.message.slice(0, 120)}`; console.error(`  ! ${name}: ${e.message}`); }
+      }
+      const mats = (await require('../content/materials').load()).map((m) => m.meta);
+      const r = await mem.sync(mats, await store.keywords.rows());
+      stats.memory = { covered: r.covered, strengthen: r.strengthen, new: r.new };
+      await store.runs.finish(runId, { ok: true, stats });
+      console.log(JSON.stringify(stats, null, 2));
       break;
     }
     case 'report': {

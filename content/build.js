@@ -326,6 +326,87 @@ ${sections}`;
 }
 
 // ── сборка ─────────────────────────────────────────────────────────────────
+
+// ── страницы по машинам ────────────────────────────────────────────────────
+// Пункт задачи «статичные страницы с маркой авто и болью клиента». Ровно здесь
+// проходит граница между полезной страницей и дорвеем, поэтому правило жёсткое:
+// страница по машине рождается ТОЛЬКО когда о ней есть что сказать —
+// подтверждённый студией факт или два независимых факта совместимости.
+// Машина, про которую в базе одна строчка «где-то упоминалась», страницы не
+// получает. Тысяча пустых страниц «линзы в <модель>» — это ровно тот
+// scaled content abuse, из-за которого санкция прилетает на весь домен.
+const MIN_FACTS = 2;
+
+async function vehicleData() {
+  const db = require('../seo/lib/db');
+  if (!db.enabled) return [];
+  const rows = await db.q(`
+    SELECT v.slug, v.make, v.model, v.year_from, v.year_to,
+           json_agg(json_build_object('lens', f.lens, 'approach', f.approach,
+             'headlight', f.headlight, 'hours', f.hours, 'notes', f.notes,
+             'confidence', f.confidence, 'status', f.status)
+             ORDER BY (f.status = 'confirmed') DESC, f.confidence DESC) AS fitment,
+           count(*) FILTER (WHERE f.status = 'confirmed') AS confirmed,
+           count(*) AS total
+      FROM vehicles v JOIN fitment f ON f.vehicle_id = v.id
+     GROUP BY v.id
+    HAVING count(*) FILTER (WHERE f.status = 'confirmed') > 0 OR count(*) >= $1
+     ORDER BY v.mentions DESC`, [MIN_FACTS]);
+  return rows;
+}
+
+const capMake = (s) => String(s).split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+const yearsOf = (v) => v.year_from ? `${v.year_from}${v.year_to && v.year_to !== v.year_from ? `–${v.year_to}` : ''}` : '';
+
+function vehiclePage(v, docs) {
+  const name = `${capMake(v.make)} ${capMake(v.model)}`;
+  const years = yearsOf(v);
+  const url = `/baza/avto/${v.slug}/`;
+  const title = `Bi-LED линзы в ${name}${years ? ` ${years}` : ''}: что ставят и как`;
+  const description = `Что встаёт в фары ${name}, нужно ли вскрывать фару и сколько это занимает — `
+    + `по данным работ студии и открытых источников.`;
+  const rows = (v.fitment || []).slice(0, 8).map((f) => `<tr><td>${esc(f.lens || '—')}</td>`
+    + `<td>${esc(f.approach || 'не указан')}</td><td>${f.hours ? `${f.hours} ч` : '—'}</td>`
+    + `<td>${f.status === 'confirmed' ? 'проверено студией' : 'по источникам'}</td></tr>`).join('\n');
+  const related = pickRelated({ tags: ['линзы'], slug: v.slug, rubric: 'linzy' }, docs);
+  const body = `<article>
+<h1>${esc(title)}</h1>
+<p class="lead">Владельцы ${esc(name)} приезжают с одним и тем же: фары светят тускло,
+свет «размазан» по асфальту, встречные моргают. Ниже — что в эту фару физически
+встаёт и чем отличаются варианты.</p>
+<h2>Что ставят в фары ${esc(name)}</h2>
+<table class="fit"><thead><tr><th>Линза / модуль</th><th>Способ</th><th>Работа</th><th>Откуда данные</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<p class="note">Данные без пометки «проверено студией» собраны из открытых источников
+и требуют осмотра конкретной фары: у одной модели за пару лет меняется и фара, и крепление.</p>
+<h2>Вскрывать фару или нет</h2>
+<p>Ответ зависит от того, что стоит с завода. Разбор способов и последствий —
+в материале <a href="/baza/linzy/ustanovka-linz-so-vskrytiem-fary/">про установку со вскрытием</a>.</p>
+${relatedBlock(related)}
+${askLink}
+</article>`;
+  return {
+    url, file: path.join('baza', 'avto', v.slug, 'index.html'),
+    html: layout({ url, title, description,
+      breadcrumbs: [{ name: 'База знаний', url: '/baza/' }, { name: 'Машины', url: '/baza/avto/' }, { name: name }],
+      body, jsonld: [localBusiness], updated: '' }),
+  };
+}
+
+function vehicleIndex(list) {
+  const url = '/baza/avto/';
+  const items = list.map((v) => `<li><a href="/baza/avto/${v.slug}/">${esc(capMake(v.make))} `
+    + `${esc(capMake(v.model))}${yearsOf(v) ? ` ${yearsOf(v)}` : ''}</a></li>`).join('\n');
+  const body = `<article><h1>Свет по машинам</h1>
+<p class="lead">Модели, по которым у нас накоплены проверяемые данные: что встаёт в фару,
+нужно ли её вскрывать, сколько занимает работа.</p>
+<ul class="list">${items}</ul>${askLink}</article>`;
+  return { url, file: path.join('baza', 'avto', 'index.html'),
+    html: layout({ url, title: 'Свет по маркам и моделям — база знаний «Дядя Саша»',
+      description: 'Что встаёт в фары конкретной машины: линзы, способ установки, нюансы.',
+      breadcrumbs: [{ name: 'База знаний', url: '/baza/' }, { name: 'Машины' }], body }) };
+}
+
 async function build() {
   const docs = await materials.load();
   for (const d of docs) {
@@ -346,6 +427,12 @@ async function build() {
   for (const d of docs) pages.push(d.meta.type === 'guide' ? guidePage(d, docs) : questionPage(d, docs));
   for (const k of Object.keys(byRubric)) pages.push(rubricIndex(k, byRubric[k]));
   pages.push(rootIndex(byRubric, docs.length));
+  // Машины: страница появляется только там, где есть факты (см. MIN_FACTS).
+  const cars = await vehicleData();
+  if (cars.length) {
+    for (const v of cars) pages.push(vehiclePage(v, docs));
+    pages.push(vehicleIndex(cars));
+  }
   pages.push(askPage());
   pages.push(thanksPage());
   pages.push(errorPage());
