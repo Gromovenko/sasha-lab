@@ -61,13 +61,20 @@ function parseJson(text) {
 
 // Оставляем только поля схемы: модель периодически изобретает свои ключи,
 // и «color»: «серебристый» в карточке заявки никому не нужен.
-function sanitize(pack, raw) {
+function sanitize(pack, raw, text = '') {
+  const hay = String(text).toLowerCase();
   const subject = {};
   for (const f of pack.subject.fields) {
     let v = raw?.subject?.[f.key];
     if (v == null || v === '' || v === 'null') continue;
     if (f.type === 'number') { v = Number(String(v).replace(/[^\d.]/g, '')); if (!Number.isFinite(v)) continue; }
-    if (f.enum && !f.enum.includes(v)) continue;
+    if (f.enum) {
+      // Значение из перечня принимаем, только если человек его НАЗВАЛ. Замер на
+      // проде 17.09: по фразе «хочу линзы на киа рио 2015» модель бодро дописала
+      // «тип фары: галоген» — она его не знала, а угадала. Категориальный факт,
+      // угаданный моделью, потом попадёт в расчёт как данность.
+      if (!f.enum.includes(v) || !hay.includes(String(v).toLowerCase())) continue;
+    }
     subject[f.key] = v;
   }
   const keys = pack.wants.map((w) => w.key);
@@ -92,7 +99,7 @@ async function extract(pack, { text, known = {} } = {}) {
       { role: 'system', content: 'Ты разбираешь переписку с клиентом сервиса и отвечаешь СТРОГО одним JSON-объектом без пояснений. Ничего не додумывай: чего в переписке нет — null.' },
       { role: 'user', content: `Отрасль: ${pack.title}.\nУже известно: ${JSON.stringify(known)}\n\nПереписка:\n"""\n${String(text).slice(0, 6000)}\n"""\n\nВерни JSON строго такой формы:\n${schemaHint(pack)}` },
     ], { maxTokens: 700, temperature: 0.1 });
-    const got = sanitize(pack, parseJson(answer));
+    const got = sanitize(pack, parseJson(answer), text);
     return {
       ...got,
       subject: { ...got.subject, ...base.subject },   // эвристика точнее модели там, где сработала

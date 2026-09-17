@@ -117,6 +117,15 @@ test('разбор без модели: год и телефон берутся 
   assert.equal(got.engine, 'rules');
 });
 
+test('значение из перечня принимается, только если человек его назвал', () => {
+  // Замер на проде 17.09: по «хочу линзы на киа рио 2015» модель дописала тип
+  // фары, которого в переписке не было. Угаданный факт дальше поехал бы в расчёт.
+  assert.deepEqual(extract.sanitize(avtosvet, { subject: { make: 'Kia', headlight: 'галоген' } }, 'хочу линзы на киа рио 2015').subject,
+    { make: 'Kia' });
+  assert.deepEqual(extract.sanitize(avtosvet, { subject: { headlight: 'штатный ксенон' } }, 'у меня штатный ксенон').subject,
+    { headlight: 'штатный ксенон' });
+});
+
 test('подтверждённое мастером не перетирается разбором', () => {
   assert.deepEqual(extract.merge({ year: 2015 }, { year: 2020, model: 'Rio' }), { year: 2015, model: 'Rio' });
 });
