@@ -4,7 +4,7 @@
 //   node harvest/run.js sources                 — что за источники и что им разрешено
 //   node harvest/run.js crawl works [--limit 50]— этап 1: примеры работ
 //   node harvest/run.js crawl parts             — этап 2: комплектующие
-//   node harvest/run.js crawl community         — этап 3: Drive2
+//   node harvest/run.js crawl community         — этап 3: сообщество (hidplanet)
 //   node harvest/run.js crawl <хост>            — один источник
 //   node harvest/run.js tg <канал> [--pages 10] — телеграм: публичное превью
 //   node harvest/run.js tg-import <result.json> [--channel имя]

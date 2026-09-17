@@ -35,7 +35,7 @@ const cachePath = (url) =>
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
-function raw(url, { redirects = 5, timeout = 20000, ua = UA } = {}) {
+function raw(url, { redirects = 5, timeout = 20000, ua = UA, maxBytes = 4 * 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const mod = u.protocol === 'http:' ? http : https;
@@ -53,13 +53,16 @@ function raw(url, { redirects = 5, timeout = 20000, ua = UA } = {}) {
       if (code >= 300 && code < 400 && res.headers.location && redirects > 0) {
         res.resume();
         return resolve(raw(new URL(res.headers.location, url).toString(),
-          { redirects: redirects - 1, timeout, ua }));
+          { redirects: redirects - 1, timeout, ua, maxBytes }));
       }
       const chunks = [];
       let size = 0;
       res.on('data', (c) => {
         size += c.length;
-        if (size > 4 * 1024 * 1024) { req.destroy(); return; }   // 4 МБ хватит любой статье
+        // 4 МБ хватит любой статье, но не карте сайта: у форума с 60 тысячами тем
+        // один кусок sitemap весит 7 МБ, и на обрыве мы получали не «большой файл»,
+        // а ошибку соединения. Потолок задаётся вызовом (см. crawl.js → sitemapUrls).
+        if (size > maxBytes) { req.destroy(new Error(`ответ больше ${Math.round(maxBytes / 1048576)} МБ`)); return; }
         chunks.push(c);
       });
       res.on('end', () => {
@@ -138,7 +141,8 @@ function allowedBy(rules, pathname) {
 // ── публичный вызов ────────────────────────────────────────────────────────
 // Возвращает { url, status, body, fromCache, skipped }.
 // skipped='robots' — источник запретил этот путь, это не ошибка.
-async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua = UA } = {}) {
+async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua = UA,
+  maxBytes = 4 * 1024 * 1024 } = {}) {
   const u = new URL(url);
   const file = cachePath(url);
   if (useCache && fs.existsSync(file)) {
@@ -155,7 +159,7 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   if (wait > 0) await sleep(wait);
   lastHit.set(u.hostname, Date.now());
 
-  const r = await raw(url, { ua });
+  const r = await raw(url, { ua, maxBytes });
   if (r.status === 200 && /html|text/.test(r.type)) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, r.body);

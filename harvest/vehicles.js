@@ -6,6 +6,8 @@
 // китайские марки, у которых своя фара и свои нюансы. Поэтому марки лежат
 // списком в коде (его правит человек), а модели ВЫНИМАЮТСЯ из источников —
 // иначе справочник устареет ровно к моменту, когда станет нужен.
+const { isLensWord } = require('./lenses');
+
 const MAKES = [
   // Китай — то, что сейчас реально едет в сервис
   ['haval', 'хавал|хавейл|haval'], ['chery', 'чери|черри|chery'],
@@ -76,7 +78,36 @@ const STOP = new RegExp('^(фар|фары|фарах|фару|фар[аеиоу
   + 'привет|всем|доброго|сегодня|вчера|вот|как|что|где|когда|почему|можно|нужно|'
   // навигация каталогов: «Назад Kia Carens», «Показать все», «Далее», «Каталог»
   + 'назад|показать|далее|ещё|еще|каталог|главная|меню|поиск|корзина|скрыть|подробнее|'
-  + 'выбрать|выберите|фильтр|сортировка|наличие|заказ|доставка|new|sale|hot)$', 'i');
+  + 'выбрать|выберите|фильтр|сортировка|наличие|заказ|доставка|new|sale|hot|'
+  // Английские источники (hidplanet.com): слова ремонта света, которые стоят
+  // сразу за маркой в заголовке темы. Без них «hyundai sonata clear lens upgrade»
+  // приезжает в справочник машиной «Sonata Clear Lens».
+  + 'projector|projectors|retrofit|retrofits|retrofitting|headlight|headlights|headlamp|headlamps|'
+  + 'lens|lenses|bulb|bulbs|ballast|ballasts|shroud|shrouds|halo|halos|bezel|harness|igniter|'
+  + 'xenon|hid|hids|bi|bixenon|biled|beam|beams|low|high|fog|drl|oem|jdm|euro|diy|demo|build|'
+  + 'swap|swaps|install|installed|installation|wiring|mod|mods|kit|kits|upgrade|clear|smoked|'
+  + 'question|questions|help|advice|issue|issues|problem|problems|thread|pics|pictures|photos|'
+  + 'video|review|for|with|and|the|in|on|to|my|need|needed|vs|or|of|a|an|'
+  + 'tail|tails|turnsignal|turnsignals|rear|front|sedan|wagon|hatchback|motorcycle|motorbike|'
+  + 'style|check|looking|finally|official|update|project|packaging|fake|comfort|features|'
+  + 'lighting|drls|'
+  // Цоколи и типоразмеры ламп — не модель машины: «mini h1», «tl d2s»
+  + 'h[1-9]|h1[0-3]|hb[1-5]|hir[12]|d[1-8][srh]|9005|9006|9012)$', 'i');
+
+// Марки, которые в английском тексте являются обычными словами или жаргоном
+// ремонта света: «mini h1» на hidplanet — это линза Morimoto Mini, а не BMW Mini;
+// «seat», «smart», «tank» в английском заголовке почти всегда не марка. Для
+// англоязычного источника такие марки засчитываются, только если сразу за ними
+// стоит настоящая модель из короткого списка.
+const EN_AMBIGUOUS = {
+  mini: /^(cooper|countryman|clubman|paceman|hatch|one)$/i,
+  seat: /^(leon|ibiza|ateca|arona|toledo|altea|cordoba|tarraco)$/i,
+  smart: /^(fortwo|forfour|roadster)$/i,
+  tank: /^(300|400|500|700)$/i,
+  ora: /^(good|funky|black|ballet)$/i,
+  wey: /^(coffee|vv[5-7]|mocha)$/i,
+  nio: /^(es[0-8]|et[5-9]|ec[6-7])$/i,
+};
 
 // «A3 A4», «Q5 Q7», «T6 T8», «S60 S60»: две модели одного вида подряд — это
 // перечисление из меню каталога, а не имя машины. Второй такой токен отрезаем.
@@ -96,13 +127,16 @@ const TAIL = `(?:[0-9][0-9A-Za-z-]{0,9}|[A-Za-z][A-Za-z0-9-]{0,14})`;
 const MODEL_RE = new RegExp(`^[ \t]*(?:(?:→|->|»|>|:|/|\\|)[ \t]*)?(${HEAD}(?:[ \t]+${TAIL}){0,2})`);
 // После короткой модели («A6», «CX-7», «Q7») хвост допустим только как поколение
 // или известная приставка; иначе «CX-7 A-class» из меню становится машиной.
-const GEN_TAIL = /^(?:[A-Za-z]{0,2}\d{1,3}[A-Za-z]?|[IVX]{1,4}|FL|NG|Pro|Max|Plus|Cross|Sport|Allroad|Avant|Sportback|Coupe|Cabrio|Touring|Long|GT|RS|AMG|Hybrid|Turbo|Rest|Restyle)$/i;
+// Комплектации английского рынка («Civic Si», «Camry LE») — такой же хвост имени,
+// как русское «рестайлинг»: без них модель обрезалась бы до «civic».
+const GEN_TAIL = /^(?:[A-Za-z]{0,2}\d{1,3}[A-Za-z]?|[IVX]{1,4}|FL|NG|Pro|Max|Plus|Cross|Sport|Allroad|Avant|Sportback|Coupe|Cabrio|Touring|Long|GT|RS|AMG|Hybrid|Turbo|Rest|Restyle|Si|SE|LE|XLE|LX|EX|EXL|SR5|STI|WRX|GTI|Type-?R|Type-?S|Quattro|4matic|xDrive|Premium|Limited)$/i;
 
 // Год либо диапазон рядом с упоминанием: «2021», «2019-2023», «2021 г.в.»
 const YEAR_RE = /\b(19[89]\d|20[0-3]\d)\s*(?:[-–—]\s*(19[89]\d|20[0-3]\d))?\s*(?:г\.?\s*в\.?|год|г\.)?/;
 
 // Возвращает [{ make, model, slug, yearFrom, yearTo, snippet }]
-function detect(text) {
+// lang='en' включает разбор английского источника: см. EN_AMBIGUOUS.
+function detect(text, { lang = 'ru' } = {}) {
   const found = new Map();
   const s = String(text || '');
   for (const m of s.matchAll(MAKE_RE)) {
@@ -119,22 +153,31 @@ function detect(text) {
     const parts = [];
     for (const p of model.split(/\s+/)) {
       if (STOP.test(p)) break;
+      // Имя линзы за маркой — не модель: «Honda Insight Morimoto retrofit».
+      if (isLensWord(p)) break;
       if (/(?:19|20)\d{2}/.test(p)) break;    // «Kia Rio 2015», «Rio 2015-2019» — год, не имя
       // Имя другой марки внутри модели — список марок из меню («MAZDA CX-4 MAZDA
       // CX-5», «BMW MERCEDES VAG AUDI»): режем на нём.
       if (makeOf(p) || NOISE.test(p)) break;
-      if (parts.length && SHORT_MODEL.test(parts[0])) {
+      // Английский заголовок — это живая речь, а не строка каталога: после модели
+      // там стоит что угодно («ford ranger looking for advice», «yaris sedan tails»),
+      // и второй токен превращал справочник в мусор. Поэтому у англоязычного
+      // источника хвост берём только как поколение или комплектацию.
+      if (parts.length && (lang === 'en' || SHORT_MODEL.test(parts[0]))) {
         const head = parts[0].toLowerCase(); const tok = p.toLowerCase();
-        // «S60 S60» — повтор; «A3 A4», «Q5 Q7» — соседние модели одной буквы;
-        // «A6 C8», «X5 F15», «Q7 2» — поколение, оставляем.
-        if (tok === head) break;
-        if (/^[a-z]\d$/.test(head) && /^[a-z]\d$/.test(tok) && head[0] === tok[0]) break;
+        if (SHORT_MODEL.test(parts[0])) {
+          // «S60 S60» — повтор; «A3 A4», «Q5 Q7» — соседние модели одной буквы;
+          // «A6 C8», «X5 F15», «Q7 2» — поколение, оставляем.
+          if (tok === head) break;
+          if (/^[a-z]\d$/.test(head) && /^[a-z]\d$/.test(tok) && head[0] === tok[0]) break;
+        }
         if (!GEN_TAIL.test(p)) break;
       }
       parts.push(p);
     }
     model = parts.join(' ').replace(/[-–—,.:;]+$/, '').trim();
     if (!model || model.length < 2) continue;
+    if (lang === 'en' && EN_AMBIGUOUS[make] && !EN_AMBIGUOUS[make].test(model.split(' ')[0])) continue;
     if (/^\d{4}$/.test(model)) continue;                 // «kia 2021» — это не модель
     // Кириллическое имя из одной-двух букв или с заглавной посреди фразы — не модель
     // («Kia и», «Audi Не»); настоящие кириллические модели длиннее (Веста, Гранта).
@@ -163,4 +206,4 @@ function detect(text) {
   return [...found.values()].sort((a, b) => b.hits - a.hits);
 }
 
-module.exports = { detect, makeOf, slugify, MAKES, YEAR_RE };
+module.exports = { detect, makeOf, slugify, MAKES, YEAR_RE, STOP, EN_AMBIGUOUS };

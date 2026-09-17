@@ -11,37 +11,30 @@
 // на документах, где правила нашли машину, но не поняли, что с ней делали.
 const vehicles = require('./vehicles');
 const store = require('./store');
+const { LENS, lenses } = require('./lenses');
 
-// Известные семейства линз и модулей — то, что реально называют в работах.
-// Список правится руками: рынок узкий, новых имён появляется несколько в год.
-// Только имена ПРОИЗВОДИТЕЛЕЙ. Короткие обозначения моделей («A3+», «Q5», «G5»)
-// в список не входят намеренно: Q5 и A3 — это ещё и модели Audi, и текст «поставили
-// линзы в Audi Q5» давал бы факт «в Q5 ставят линзу Q5». Модель подхватывается
-// парой «производитель + следующий токен» в lenses() — там неоднозначности нет.
-const LENS = [
-  'aozoom', 'dragon knight', 'hella', 'koito', 'morimoto',
-  'mtf', 'optima', 'dixel', 'sanvi', 'viper', 'zkw', 'valeo', 'bosch', 'sim-?tech',
-  'gtr', 'lumen', 'starled', 'zax', 'x-?bright', 'demon', 'cyclone',
-];
-const LENS_RE = new RegExp(`(?<![a-zа-яё])(${LENS.join('|')})(?![a-zа-яё])`, 'gi');
-const SIZE_RE = /\b([23](?:[.,]\d)?)\s*(?:дюйм|")/i;
+const SIZE_RE = /\b([23](?:[.,]\d)?)\s*(?:дюйм|"|''|inch|inches)/i;
 
+// Английские правила стоят рядом с русскими, а не отдельным разборщиком:
+// факт один и тот же («фару вскрывали», «штатный ксенон»), меняется только язык
+// источника. Слова взяты из живых заголовков hidplanet.com: там «вскрытие» — это
+// «bake/open the headlight» и «butyl», а «без вскрытия» — «plug and play».
 const APPROACH = [
-  [/без\s+вскрыт|не\s+вскрыва/i, 'без вскрытия'],
-  [/со?\s+вскрыт|вскрыт(ие|ием|ие\s+фары)|разбор(ка)?\s+фар/i, 'со вскрытием'],
-  [/замен[аы]\s+(модул|фары целиком)/i, 'замена модуля'],
+  [/без\s+вскрыт|не\s+вскрыва|plug\s*[-&nн]?\s*(?:and|n)?\s*play|\bpnp\b|no\s+cutting/i, 'без вскрытия'],
+  [/со?\s+вскрыт|вскрыт(ие|ием|ие\s+фары)|разбор(ка)?\s+фар|bak(?:e|ed|ing)\s+(?:the\s+)?(?:headlight|housing)|open(?:ed|ing)?\s+(?:up\s+)?(?:the\s+)?(?:headlight|housing)|butyl|reseal/i, 'со вскрытием'],
+  [/замен[аы]\s+(модул|фары целиком)|housing\s+swap|headlight\s+swap|retrofit\s+housings?/i, 'замена модуля'],
 ];
 const HEADLIGHT = [
-  [/штатн\w*\s+ксенон|заводск\w*\s+ксенон/i, 'штатный ксенон'],
-  [/штатн\w*\s+(led|лед)|заводск\w*\s+led/i, 'штатный led'],
-  [/линзован\w*\s+галоген/i, 'линзованный галоген'],
-  [/рефлектор\w*|галоген/i, 'галоген'],
+  [/штатн\w*\s+ксенон|заводск\w*\s+ксенон|(?:factory|oem|stock)\s+(?:bi-?)?(?:hid|xenon)/i, 'штатный ксенон'],
+  [/штатн\w*\s+(led|лед)|заводск\w*\s+led|(?:factory|oem|stock)\s+led/i, 'штатный led'],
+  [/линзован\w*\s+галоген|halogen\s+projector/i, 'линзованный галоген'],
+  [/рефлектор\w*|галоген|halogen|reflector/i, 'галоген'],
 ];
 const DIFFICULTY = [
-  [/сложн\w*\s+(работа|фара|случай)|намучил|провозил\w+\s+(весь|два)/i, 'сложная'],
-  [/лёгк\w*|легк\w*\s+(работа|фара)|за\s+час/i, 'лёгкая'],
+  [/сложн\w*\s+(работа|фара|случай)|намучил|провозил\w+\s+(весь|два)|nightmare|pain\s+in\s+the|tricky|difficult/i, 'сложная'],
+  [/лёгк\w*|легк\w*\s+(работа|фара)|за\s+час|easy\s+(?:job|install|retrofit)|straightforward/i, 'лёгкая'],
 ];
-const HOURS_RE = /(\d{1,2})\s*(?:час|ч\.)/i;
+const HOURS_RE = /(\d{1,2})\s*(?:час|ч\.|hours?\b|hrs?\b)/i;
 
 // Тип комплектующего по названию — для каталога parts.
 const PART_KINDS = [
@@ -59,26 +52,6 @@ const kindOf = (name) => (PART_KINDS.find(([re]) => re.test(name)) || [null, 'ot
 
 const firstMatch = (rules, text) => (rules.find(([re]) => re.test(text)) || [])[1] || null;
 
-// Имена линз приходят парой «производитель + модель» («Aozoom A3+», «MTF Dynamic»).
-// По отдельности это два бесполезных факта: «aozoom» и «a3+» как разные линзы —
-// именно так и выглядела первая версия. Поэтому пары склеиваем, а одиночки,
-// вошедшие в пару, выбрасываем.
-function lenses(text) {
-  const hits = [...new Set([...text.matchAll(LENS_RE)].map((m) => m[1].toLowerCase()))];
-  const pairs = new Set();
-  for (const m of text.matchAll(new RegExp(`(?<![a-zа-яё])(${LENS.join('|')})\\s+([a-z0-9][a-z0-9+.-]{0,9})`, 'gi'))) {
-    const [, brand, raw] = m;
-    // «Hella 3R.» в конце предложения — точка не часть модели.
-    const model = raw.replace(/[.,;:-]+$/, '');
-    if (!model) continue;
-    if (hits.includes(model.toLowerCase()) || /^[a-z]?\d/i.test(model)) {
-      pairs.add(`${brand.toLowerCase()} ${model.toLowerCase()}`);
-    }
-  }
-  const inPair = (h) => [...pairs].some((p) => p.split(' ').includes(h));
-  return [...pairs, ...hits.filter((h) => !inPair(h))];
-}
-
 // Разбор одного документа → { vehicles:[], fitment:[], part|null }
 function parseDoc(doc) {
   const text = String(doc.text || '');
@@ -87,7 +60,10 @@ function parseDoc(doc) {
   // каталог сайта вместо той машины, про которую карточка. Поэтому у parts
   // машину берём только из заголовка — он про товар и ни про что больше.
   const isPart = doc.meta && doc.meta.kind === 'parts';
-  const found = vehicles.detect(isPart ? String(doc.title || '') : `${doc.title || ''}\n${text}`);
+  // Язык источника меняет разбор марок: в английском «mini h1» — это линза
+  // Morimoto Mini, а не BMW Mini (см. EN_AMBIGUOUS в vehicles.js).
+  const lang = (doc.meta && doc.meta.lang) || 'ru';
+  const found = vehicles.detect(isPart ? String(doc.title || '') : `${doc.title || ''}\n${text}`, { lang });
   const lensHits = lenses(text);
   const size = (text.match(SIZE_RE) || [])[1];
   const approach = firstMatch(APPROACH, text);
@@ -156,4 +132,4 @@ async function run({ limit = 500, reparse = false } = {}) {
   return stat;
 }
 
-module.exports = { parseDoc, run, kindOf, LENS };
+module.exports = { parseDoc, run, kindOf, lenses, LENS };
