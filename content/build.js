@@ -347,6 +347,13 @@ const MIN_FACTS = 2;
 async function vehicleData() {
   const db = require('../seo/lib/db');
   if (!db.enabled) return [];
+  // Второе условие — про рынок, а не про количество. С 17.09.2026 в базе есть
+  // факты с англоязычного форума (hidplanet.com): знание оттуда ценное, но
+  // страница студии в Ростове не должна РОЖДАТЬСЯ из одних заголовков
+  // американского форума — там другой рынок и другие линзы, а проверить это
+  // мастеру не по чему. Поэтому машина получает страницу, если её подтвердила
+  // студия либо среди оснований есть хоть один русскоязычный документ.
+  // У старых документов `lang` в meta нет — они считаются русскими.
   const rows = await db.q(`
     SELECT v.slug, v.make, v.model, v.year_from, v.year_to,
            json_agg(json_build_object('lens', f.lens, 'approach', f.approach,
@@ -357,7 +364,11 @@ async function vehicleData() {
            count(*) AS total
       FROM vehicles v JOIN fitment f ON f.vehicle_id = v.id
      GROUP BY v.id
-    HAVING count(*) FILTER (WHERE f.status = 'confirmed') > 0 OR count(*) >= $1
+    HAVING count(*) FILTER (WHERE f.status = 'confirmed') > 0
+        OR (count(*) >= $1 AND bool_or(EXISTS (
+              SELECT 1 FROM documents d
+               WHERE d.id = ANY (f.evidence)
+                 AND COALESCE(d.meta->>'lang', 'ru') = 'ru')))
      ORDER BY v.mentions DESC`, [MIN_FACTS]);
   return rows;
 }

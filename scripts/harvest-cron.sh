@@ -17,6 +17,14 @@ echo "=== $(TZ=Europe/Moscow date '+%F %H:%M МСК') сбор базы знан
 # первичное наполнение — HARVEST_LIMIT=400 разово руками. Drive2 в реестре
 # выключен (robots.txt запрещает сбор) — команда это скажет и пойдёт дальше.
 LIMIT="${HARVEST_LIMIT:-60}"
+
+# Источник «только заголовки» (hidplanet.com) чужой сервер почти не трогает:
+# за заход это ОДНА скачанная карта сайта вместо тысяч страниц, дальше всё
+# считается у нас. Поэтому общий потолок в 60 ему не нужен — иначе форум на
+# 64 тысячи тем догонялся бы годами. Идёт первым: после него заход по kind
+# community не найдёт у него ничего нового.
+timeout 1800 node harvest/run.js crawl www.hidplanet.com || echo '  ! hidplanet не доехал'
+
 for what in works parts community; do
   timeout 14400 node harvest/run.js crawl "$what" --limit "$LIMIT" || echo "  ! этап $what не доехал"
 done
