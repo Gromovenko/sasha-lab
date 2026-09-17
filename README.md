@@ -188,7 +188,8 @@ cd /opt/sasha-lab
 node harvest/run.js sources               # что за источники и что им разрешает robots.txt
 node harvest/run.js crawl works  --limit 60
 node harvest/run.js crawl parts  --limit 60
-node harvest/run.js crawl community --limit 40   # Drive2, медленно: пауза 8 с
+node harvest/run.js crawl community --limit 40   # сообщество, медленно: пауза 8–10 с
+node harvest/run.js crawl www.hidplanet.com      # форум США: только заголовки тем из карты сайта
 node harvest/run.js tg <канал> --pages 30        # телеграм-канал (публичное превью)
 node harvest/run.js facts                        # разбор в машины/комплектующие/совместимость
 node harvest/run.js stats
@@ -199,6 +200,19 @@ node content/build.js && pm2 restart sasha-lab   # страницы /baza/avto/ 
 разбор robots.txt. Быстрее — значит быть закрытым на второй день.
 Чужие страницы лежат в `documents` как рабочий материал и **не публикуются**:
 на сайт идут только свои формулировки и факты (`vehicles`, `parts`, `fitment`).
+
+`hidplanet.com` (англоязычный форум ретрофита, 64 тысячи тем) взят в особом
+режиме `mode:'titles'`: весь html закрыт челленджем Cloudflare, а карта сайта
+открыта, и заголовок темы лежит прямо в адресе. Страницы форума не качаются
+вообще — в базу попадают только заголовки, которые площадка публикует для
+поисковиков. Страницу `/baza/avto/` одни такие факты не рождают: нужен
+подтверждённый факт студии либо русскоязычное основание (`content/build.js`).
+
+⚠ Запускать сбор и сборку на RU **от пользователя `sashaweb`**
+(`su -s /bin/bash sashaweb -c '…'`): крон живёт под ним, а запуск от root
+перекрашивает `dist/` и `.harvest-cache/` в root, после чего крон молча
+перестаёт писать. После ручного захода от root — `chown -R sashaweb:sashaweb
+/opt/sasha-lab/dist /opt/sasha-lab/.harvest-cache`.
 
 Спрос на автомате — одной командой; на RU стоит в cron вместе со сбором
 источников (`scripts/harvest-cron.sh`, вс 03:00 МСК, лог `/var/log/sashalab-harvest.log`):
