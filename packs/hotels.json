@@ -1,0 +1,294 @@
+{
+  "id": "hotels",
+  "title": "Подбор отеля (демонстрация универсальности движка)",
+  "brand": {
+    "master": "менеджер",
+    "city": "Санкт-Петербург",
+    "signature": "Letov · подбор отелей",
+    "workHours": "с 09:00 до 21:00"
+  },
+  "currency": "RUB",
+  "sla": {
+    "firstReplyMinutes": 30
+  },
+  "subject": {
+    "label": "Поездка",
+    "fields": [
+      {
+        "key": "destination",
+        "label": "Направление",
+        "required": true
+      },
+      {
+        "key": "checkin",
+        "label": "Заезд",
+        "required": true
+      },
+      {
+        "key": "nights",
+        "label": "Ночей",
+        "type": "number",
+        "required": true
+      },
+      {
+        "key": "guests",
+        "label": "Гостей",
+        "type": "number",
+        "required": true
+      },
+      {
+        "key": "budget",
+        "label": "Бюджет за ночь",
+        "type": "number",
+        "required": false
+      }
+    ]
+  },
+  "wants": [
+    {
+      "key": "sea",
+      "tags": [
+        "sea"
+      ],
+      "words": [
+        "море",
+        "пляж",
+        "первая линия"
+      ]
+    },
+    {
+      "key": "family",
+      "tags": [
+        "family"
+      ],
+      "words": [
+        "с детьми",
+        "ребёнк",
+        "ребенк",
+        "семь"
+      ]
+    },
+    {
+      "key": "spa",
+      "tags": [
+        "spa"
+      ],
+      "words": [
+        "спа",
+        "spa",
+        "бассейн",
+        "термы"
+      ]
+    }
+  ],
+  "photos": {
+    "min": 0,
+    "checklist": []
+  },
+  "vision": {
+    "instruction": "На фото — скриншот брони, письмо отеля или снимок номера. Вынь из него даты, город, категорию номера и число гостей, если они там есть.",
+    "findings": [
+      {
+        "code": "booking_screenshot",
+        "label": "скриншот чужой брони",
+        "then": {
+          "note": "Вижу вашу бронь на скриншоте — сравню с тем, что есть у нас по этим же датам."
+        }
+      },
+      {
+        "code": "unclear",
+        "label": "по фото не разобрать",
+        "then": {
+          "ask": "По скриншоту не разобрать даты — напишите, пожалуйста, числа заезда и выезда."
+        }
+      }
+    ]
+  },
+  "catalog": [
+    {
+      "sku": "std-3",
+      "kind": "item",
+      "title": "Отель 3★, стандарт, завтраки",
+      "price": 4500,
+      "unit": "ночь",
+      "tags": [
+        "hotel",
+        "budget"
+      ],
+      "sort": 10,
+      "includes": [
+        "Завтраки",
+        "Бесплатная отмена за 3 дня",
+        "Оплата при заселении"
+      ]
+    },
+    {
+      "sku": "std-4-sea",
+      "kind": "item",
+      "title": "Отель 4★ у моря, вид на море",
+      "price": 9800,
+      "unit": "ночь",
+      "tags": [
+        "hotel",
+        "sea"
+      ],
+      "sort": 20,
+      "includes": [
+        "Завтраки",
+        "Пляж в 5 минутах",
+        "Бесплатная отмена за 7 дней"
+      ]
+    },
+    {
+      "sku": "family-4",
+      "kind": "item",
+      "title": "Семейный номер 4★, два помещения",
+      "price": 12400,
+      "unit": "ночь",
+      "tags": [
+        "hotel",
+        "family",
+        "sea"
+      ],
+      "sort": 30,
+      "includes": [
+        "Завтраки",
+        "Детская кроватка бесплатно",
+        "Анимация для детей"
+      ]
+    },
+    {
+      "sku": "spa-5",
+      "kind": "item",
+      "title": "Отель 5★ со спа и термальным комплексом",
+      "price": 19000,
+      "unit": "ночь",
+      "tags": [
+        "hotel",
+        "spa"
+      ],
+      "sort": 40,
+      "includes": [
+        "Полупансион",
+        "Спа-комплекс без ограничения",
+        "Поздний выезд"
+      ]
+    },
+    {
+      "sku": "transfer",
+      "kind": "option",
+      "title": "Трансфер аэропорт — отель",
+      "price": 3500,
+      "unit": "поездка",
+      "tags": [
+        "option"
+      ],
+      "sort": 60
+    },
+    {
+      "sku": "insurance",
+      "kind": "option",
+      "title": "Страховка на поездку",
+      "price": 1200,
+      "unit": "человек",
+      "tags": [
+        "option"
+      ],
+      "sort": 61
+    }
+  ],
+  "rules": [
+    {
+      "id": "need-dates",
+      "when": {
+        "absent": "subject.checkin"
+      },
+      "then": {
+        "ask": "На какие даты ищем размещение?"
+      }
+    },
+    {
+      "id": "need-guests",
+      "when": {
+        "absent": "subject.guests"
+      },
+      "then": {
+        "ask": "Сколько человек едет и есть ли дети?"
+      }
+    },
+    {
+      "id": "kids",
+      "when": {
+        "text": [
+          "с детьми",
+          "ребёнк",
+          "ребенк"
+        ]
+      },
+      "then": {
+        "requireTags": [
+          "family"
+        ],
+        "note": "Подобрал варианты, где детская кроватка и питание для ребёнка уже включены."
+      }
+    },
+    {
+      "id": "transfer-from-text",
+      "when": {
+        "text": [
+          "трансфер",
+          "встретить в аэропорту"
+        ]
+      },
+      "then": {
+        "addItem": "transfer"
+      }
+    },
+    {
+      "id": "insurance-from-text",
+      "when": {
+        "text": [
+          "страхов"
+        ]
+      },
+      "then": {
+        "addItem": "insurance"
+      }
+    }
+  ],
+  "offer": {
+    "title": "ПОДБОР РАЗМЕЩЕНИЯ",
+    "subtitle": "ЦЕНЫ ЗА НОЧЬ, НАЛИЧИЕ ПОДТВЕРЖДАЮ ПРИ БРОНИРОВАНИИ:",
+    "maxChoices": 3,
+    "template": "{{title}}\n\n{{subtitle}}\n\n{{#choices}}✔️ {{title}} — {{price}}\n{{/choices}}{{#hasExtras}}\nДОПОЛНИТЕЛЬНО:\n\n{{#extras}}➕ {{title}} — {{sum}}\n{{/extras}}{{/hasExtras}}\nИТОГО: {{total}}\n\nЧТО ВХОДИТ:\n\n{{#includes}}🔹 {{.}}\n{{/includes}}{{#hasNotes}}\n{{#notes}}{{.}}\n{{/notes}}{{/hasNotes}}\n{{closing}}",
+    "closing": "Забронирую в течение дня, работаем {{workHours}}.",
+    "questionTemplate": "{{greeting}}\n\n{{#questions}}— {{.}}\n{{/questions}}\n{{#hasNotes}}\n{{#notes}}{{.}}\n{{/notes}}{{/hasNotes}}",
+    "defaultTags": [
+      "hotel"
+    ]
+  },
+  "greeting": "Здравствуйте! Подберу варианты, только уточню:",
+  "followups": [
+    {
+      "step": 1,
+      "afterHours": 6,
+      "text": "Здравствуйте! Отправлял подборку — что-то подошло? Могу поискать дешевле или ближе к морю."
+    },
+    {
+      "step": 2,
+      "afterHours": 72,
+      "text": "По этим датам места разбирают: если ещё актуально, придержу бронь без предоплаты."
+    }
+  ],
+  "knowledge": {
+    "rubrics": [
+      "otdyh",
+      "otely",
+      "pravila"
+    ],
+    "seeds": [
+      "отель у моря",
+      "тур с детьми"
+    ]
+  }
+}

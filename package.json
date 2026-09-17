@@ -2,7 +2,7 @@
   "name": "sasha-lab",
   "version": "1.0.0",
   "private": true,
-  "description": "Зеркало sasha-lab.ru, база знаний и SEO-панель студии автосвета «Дядя Саша»",
+  "description": "Сайт, база знаний и движок заявок студии автосвета «Дядя Саша»",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,10 +10,15 @@
     "migrate": "node db/migrate.js",
     "import": "node db/import.js",
     "seo": "node seo/cli.js",
-    "harvest": "node harvest/run.js"
+    "harvest": "node harvest/run.js",
+    "test": "node --test test/*.test.js",
+    "engine": "node engine/cli.js",
+    "worker": "node engine/worker.js"
   },
   "dependencies": {
     "pg": "^8.13.1"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

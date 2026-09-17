@@ -12,9 +12,9 @@ const HOST = process.env.LLM_HOST || 'api.neuraldeep.ru';
 const MODEL = process.env.LLM_MODEL || 'qwen3.6-fp8-noreason';
 const enabled = () => Boolean(process.env.NEURALDEEP_API_KEY);
 
-function chat(messages, { maxTokens = 700, temperature = 0.3, timeout = 45000 } = {}) {
+function chat(messages, { maxTokens = 700, temperature = 0.3, timeout = 45000, model = MODEL } = {}) {
   if (!enabled()) return Promise.reject(new Error('нет NEURALDEEP_API_KEY'));
-  const payload = JSON.stringify({ model: MODEL, messages, max_tokens: maxTokens, temperature });
+  const payload = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature });
   return new Promise((resolve, reject) => {
     const req = https.request({
       host: HOST, path: '/v1/chat/completions', method: 'POST',

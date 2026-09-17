@@ -26,6 +26,10 @@ sasha-lab · SEO
   memory                    прогнать семантику через сео-память (одна фраза — один адрес)
   queue [--limit 20]        что писать дальше: новые страницы и что усилить
   demand [--limit 30]       ⟳ полный цикл спроса: Wordstat + GSC + Вебмастер → память
+                            --cheap: без Wordstat (он платный) — для прогонов несколько раз в день
+  autopages [--limit 2]     написать страницы под верх очереди спроса (--dry: только показать)
+  drafts                    автостраницы, ждущие решения владельца
+  publish <slug>            опубликовать автостраницу-черновик
 
   questions [--status new]  очередь вопросов посетителей
 
@@ -108,11 +112,12 @@ async function main() {
       const mem = require('./lib/memory');
       const runId = await store.runs.start('demand');
       const stats = {};
-      for (const [name, fn] of [
-        ['wordstat', () => jobs.collectWordstat()],
-        ['webmaster', () => jobs.pullWebmaster({})],
-        ['gsc', () => jobs.pullGsc({})],
-      ]) {
+      // Wordstat платный (20 ₽/вызов): в частых дневных прогонах его пропускаем,
+      // бесплатные Вебмастер и Search Console дают тот же свежий спрос.
+      const sources = argv.includes('--cheap')
+        ? [['webmaster', () => jobs.pullWebmaster({})], ['gsc', () => jobs.pullGsc({})]]
+        : [['wordstat', () => jobs.collectWordstat()], ['webmaster', () => jobs.pullWebmaster({})], ['gsc', () => jobs.pullGsc({})]];
+      for (const [name, fn] of sources) {
         try { const r = await fn(); stats[name] = Array.isArray(r) ? r.length : r.collected?.length ?? 0; }
         catch (e) { stats[name] = `ошибка: ${e.message.slice(0, 120)}`; console.error(`  ! ${name}: ${e.message}`); }
       }
@@ -121,6 +126,29 @@ async function main() {
       stats.memory = { covered: r.covered, strengthen: r.strengthen, new: r.new };
       await store.runs.finish(runId, { ok: true, stats });
       console.log(JSON.stringify(stats, null, 2));
+      break;
+    }
+    case 'autopages': {
+      const writer = require('./lib/writer');
+      const runId = await store.runs.start('autopages');
+      const r = await writer.run({ limit: Number(flag('limit', 2)), dry: argv.includes('--dry') });
+      for (const w of r.written) console.log(`  + ${w.published ? 'опубликовано' : 'черновик  '} /baza/${w.slug || '—'}/  ${w.title}`);
+      for (const s2 of r.skipped) console.log(`  · пропущено «${s2.phrase}»: ${s2.why}`);
+      for (const e of r.errors) console.error(`  ! ${e.phrase}: ${e.error}`);
+      await store.runs.finish(runId, { ok: !r.errors.length, stats: { written: r.written.length, skipped: r.skipped.length, errors: r.errors.length } });
+      console.log(`написано страниц: ${r.written.length}`);
+      break;
+    }
+    case 'drafts': {
+      const rows = await require('./lib/writer').drafts();
+      for (const d of rows) console.log(`  ${d.slug}\n      ${d.title}${d.auto_note ? `\n      чего не хватило: ${d.auto_note}` : ''}`);
+      console.log(`черновиков: ${rows.length}`);
+      break;
+    }
+    case 'publish': {
+      if (!argv[1]) return console.error('нужен slug: seo publish <slug>');
+      await require('./lib/writer').publishDraft(argv[1]);
+      console.log(`опубликовано: /baza/${argv[1]}/`);
       break;
     }
     case 'report': {

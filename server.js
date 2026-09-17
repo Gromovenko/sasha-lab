@@ -12,6 +12,10 @@ require('./server-env')(path.join(__dirname, 'seo', '.env'));
 const admin = require('./seo/admin');
 const questions = require('./seo/questions');
 const assistant = require('./seo/assistant-http');
+// Панель мастера и приём заявок (/crm, /zayavka, /api/lead) — тот же процесс:
+// отдельный веб-сервер ради двух экранов плодить незачем, фоновая работа
+// движка вынесена в engine/worker.js.
+const crm = require('./engine/crm');
 
 const ROOT = path.join(__dirname, 'mirror');
 const PAGES = path.join(ROOT, 'sasha-lab.ru');
@@ -56,6 +60,9 @@ function fallbackOptim(p) {
 
 http.createServer(async (req, res) => {
   if (await admin.handle(req, res)) return;
+
+  // Заявки: панель мастера, публичная форма и ручка приёма.
+  if (await crm.handle(req, res)) return;
 
   // Ассистент базы знаний: страница «Помощник», ручка вопроса и подбор по машине.
   if (await assistant.handle(req, res)) return;

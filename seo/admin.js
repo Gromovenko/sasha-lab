@@ -3,41 +3,19 @@
 //
 // Пароль — SEO_ADMIN_PASSWORD в окружении. Сессия — подписанная HMAC кука,
 // без хранилища: панель читающая, состояние держать не за чем.
-const crypto = require('crypto');
 const jobs = require('./lib/jobs');
 const store = require('./lib/store');
 const db = require('./lib/db');
 const questions = require('./questions');
+const auth = require('./lib/auth');
 
-const COOKIE = 'sasha_seo';
-const TTL = 14 * 24 * 3600 * 1000;
-
-function secret() {
-  return process.env.SEO_SESSION_SECRET || process.env.SEO_ADMIN_PASSWORD || '';
-}
-
-function sign(exp) {
-  return `${exp}.${crypto.createHmac('sha256', secret()).update(String(exp)).digest('hex')}`;
-}
-
-function valid(token) {
-  if (!token || !secret()) return false;
-  const [exp, mac] = String(token).split('.');
-  if (!exp || !mac || Number(exp) < Date.now()) return false;
-  const want = crypto.createHmac('sha256', secret()).update(exp).digest('hex');
-  return want.length === mac.length && crypto.timingSafeEqual(Buffer.from(want), Buffer.from(mac));
-}
-
-function passwordOk(given) {
-  const want = process.env.SEO_ADMIN_PASSWORD || '';
-  if (!want) return false;
-  const a = Buffer.from(crypto.createHash('sha256').update(String(given)).digest('hex'));
-  const b = Buffer.from(crypto.createHash('sha256').update(want).digest('hex'));
-  return crypto.timingSafeEqual(a, b);
-}
-
-const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';')
-  .map((c) => c.trim().split('=')).filter((p) => p[0]).map(([k, ...v]) => [k, v.join('=')]));
+// Вход — общий модуль на обе панели (та же дверь у /crm, см. engine/crm.js).
+const gate = auth.make({
+  cookie: 'sasha_seo',
+  path: '/seo',
+  password: () => process.env.SEO_ADMIN_PASSWORD || '',
+  secret: () => process.env.SEO_SESSION_SECRET || process.env.SEO_ADMIN_PASSWORD || '',
+});
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -101,6 +79,9 @@ async function dashboard(msg) {
   const memQueue = await soft(() => require('./lib/memory').queue({ limit: 15 }), { new: [], strengthen: [] });
   const noAnswer = await soft(() => require('./assistant').unanswered(15), []);
   const spend = await soft(() => store.kv.get('wordstat_spend', null), null);
+  // Автостраницы, которые движок написал, но не решился опубликовать сам
+  // (обоснование слабое). Решение — за владельцем, одной кнопкой.
+  const autoDrafts = await soft(() => require('./lib/writer').drafts(), []);
   const cls = (p) => !p ? 'miss' : p <= 3 ? 'top3' : p <= 10 ? 'top10' : '';
 
   const tiles = [
@@ -116,6 +97,12 @@ async function dashboard(msg) {
 ${s.updated ? `Последнее обновление: ${esc(s.updated)}.` : 'Данные ещё не собирались.'}</p>
 ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
 <div class="tiles">${tiles}</div>
+${autoDrafts.length ? `<h2>Автостраницы ждут решения (${autoDrafts.length})</h2>` + autoDrafts.map((d) => `<div class="q">
+  <div class="who">${esc(d.rubric)} · ${esc(d.slug)}${d.auto_note ? ` · чего не хватило: ${esc(d.auto_note)}` : ''}</div>
+  <b>${esc(d.title)}</b><br>${esc(d.description || '')}
+  <form class="inline" method="POST" action="/seo/autopublish"><input type="hidden" name="slug" value="${esc(d.slug)}"><button class="act">Опубликовать</button></form>
+  <form class="inline" method="POST" action="/seo/autoreject"><input type="hidden" name="slug" value="${esc(d.slug)}"><button class="act">Удалить</button></form>
+</div>`).join('') : ''}
 <p>
   <form class="inline" method="POST" action="/seo/run"><input type="hidden" name="job" value="wordstat"><button class="act">Собрать частотность</button></form>
   <span class="sub">Wordstat платный: ${jobs.WORDSTAT_RUB_PER_CALL} ₽ за корневую фразу, не чаще раза в 30 дней на фразу, до ${jobs.WORDSTAT_MAX_CALLS} за прогон${spend ? `; потрачено ≈${spend.rub} ₽ (${spend.calls} вызов.)` : ''}.</span>
@@ -273,7 +260,7 @@ async function route(req, res) {
     res.end(html);
   };
 
-  if (!process.env.SEO_ADMIN_PASSWORD) {
+  if (!gate.enabled()) {
     return send(503, shell('SEO', '<h1>Панель выключена</h1><p class="sub">Не задан SEO_ADMIN_PASSWORD.</p>')), true;
   }
   if (!db.enabled) {
@@ -282,16 +269,14 @@ async function route(req, res) {
 
   if (url.pathname === '/seo/login' && req.method === 'POST') {
     const body = await readBody(req);
-    if (!passwordOk(body.password || '')) return send(401, loginPage('Неверный пароль')), true;
-    const exp = Date.now() + TTL;
-    return send(302, '', { Location: '/seo/',
-      'Set-Cookie': `${COOKIE}=${sign(exp)}; Path=/seo; HttpOnly; SameSite=Lax; Max-Age=${TTL / 1000}` }), true;
+    if (!gate.passwordOk(body.password || '')) return send(401, loginPage('Неверный пароль')), true;
+    return send(302, '', { Location: '/seo/', 'Set-Cookie': gate.setCookie() }), true;
   }
 
-  if (!valid(cookies(req)[COOKIE])) return send(200, loginPage()), true;
+  if (!gate.ok(req)) return send(200, loginPage()), true;
 
   if (url.pathname === '/seo/logout') {
-    return send(302, '', { Location: '/seo/', 'Set-Cookie': `${COOKIE}=; Path=/seo; Max-Age=0` }), true;
+    return send(302, '', { Location: '/seo/', 'Set-Cookie': gate.clearCookie() }), true;
   }
 
   if (url.pathname === '/seo/run' && req.method === 'POST') {
@@ -312,6 +297,22 @@ async function route(req, res) {
     } catch (e) {
       return send(302, '', { Location: `/seo/q?id=${encodeURIComponent(body.id || '')}&err=${encodeURIComponent(e.message)}` }), true;
     }
+  }
+
+  if (url.pathname === '/seo/autopublish' && req.method === 'POST') {
+    const body = await readBody(req);
+    try {
+      await require('./lib/writer').publishDraft(body.slug);
+      return send(302, '', { Location: `/seo/?msg=${encodeURIComponent(`опубликовано: ${body.slug}`)}` }), true;
+    } catch (e) {
+      return send(302, '', { Location: `/seo/?msg=${encodeURIComponent(`не опубликовалось: ${e.message}`)}` }), true;
+    }
+  }
+
+  if (url.pathname === '/seo/autoreject' && req.method === 'POST') {
+    const body = await readBody(req);
+    try { await require('../content/materials').remove(body.slug); } catch { /* уже нет */ }
+    return send(302, '', { Location: `/seo/?msg=${encodeURIComponent('черновик удалён')}` }), true;
   }
 
   if (url.pathname === '/seo/reject' && req.method === 'POST') {
