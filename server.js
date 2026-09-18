@@ -9,6 +9,9 @@ const path = require('path');
 // без пароля и просто скажет «выключена».
 require('./server-env')(path.join(__dirname, 'seo', '.env'));
 
+// Раздел /admin и кабинет клиента /cabinet: люди, доступы, журнал, сводка по
+// всем контурам. Стоит первым — его сессия служит дверью и для /crm, и для /seo.
+const adminSection = require('./admin/http');
 const admin = require('./seo/admin');
 const questions = require('./seo/questions');
 const assistant = require('./seo/assistant-http');
@@ -59,6 +62,9 @@ function fallbackOptim(p) {
 }
 
 http.createServer(async (req, res) => {
+  // Админка и кабинет клиента.
+  if (await adminSection.handle(req, res)) return;
+
   if (await admin.handle(req, res)) return;
 
   // Заявки: панель мастера, публичная форма и ручка приёма.

@@ -16,6 +16,10 @@ const channels = require('./channels');
 const quoteEngine = require('./quote');
 const { form } = require('./multipart');
 const auth = require('../seo/lib/auth');
+// Единая дверь: сессия раздела /admin пускает мастера и сюда (см. admin/http.js).
+const section = require('../admin/http');
+const adminClients = require('../admin/clients');
+const log = require('../admin/log');
 const db = require('../seo/lib/db');
 
 const gate = auth.make({
@@ -278,11 +282,17 @@ async function route(req, res) {
     // Разбор, зрение и расчёт — в фоне: человек на телефоне не должен ждать,
     // пока модель посмотрит три фотографии фары.
     pipeline.think(deal.id, {}).catch((e) => console.error('crm: расчёт заявки', e.message));
+    // Заодно заводим клиенту кабинет: контакт уже есть, пароль он задаст сам,
+    // когда захочет посмотреть свои расчёты (/cabinet).
+    adminClients.ensureForDeal(deal).catch(() => null);
+    log.info({ area: 'crm', action: 'lead.new', actor: fields.contact || null, entity: 'deal', entityId: deal.id,
+      message: text.slice(0, 200), ...log.web(req) }).catch(() => null);
     return send(302, '', { Location: '/zayavka/?ok=1' }), true;
   }
 
   // Закрытая часть.
-  if (!gate.enabled()) return send(503, shell('Заявки', '<h1>Панель выключена</h1><p class="sub">Не задан CRM_PASSWORD (или SEO_ADMIN_PASSWORD).</p>')), true;
+  const staff = await section.staffUser(req);
+  if (!gate.enabled() && !staff) return send(503, shell('Заявки', '<h1>Панель выключена</h1><p class="sub">Не задан CRM_PASSWORD (или SEO_ADMIN_PASSWORD). Вход — через <a href="/admin/login">/admin</a>.</p>')), true;
   if (!db.enabled) return send(503, shell('Заявки', '<h1>Нет хранилища</h1><p class="sub">Не задан SASHALAB_PG_URL: сделки, переписка и фото живут в базе.</p>')), true;
 
   if (p === '/crm/login' && req.method === 'POST') {
@@ -290,7 +300,7 @@ async function route(req, res) {
     if (!gate.passwordOk(fields.password || '')) return send(401, loginPage('Неверный пароль')), true;
     return send(302, '', { Location: '/crm/', 'Set-Cookie': gate.setCookie() }), true;
   }
-  if (!gate.ok(req)) return send(200, loginPage()), true;
+  if (!gate.ok(req) && !staff) return send(200, loginPage()), true;
   if (p === '/crm/logout') return send(302, '', { Location: '/crm/', 'Set-Cookie': gate.clearCookie() }), true;
 
   if (p === '/crm/file') {

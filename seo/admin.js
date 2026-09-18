@@ -8,6 +8,9 @@ const store = require('./lib/store');
 const db = require('./lib/db');
 const questions = require('./questions');
 const auth = require('./lib/auth');
+// Вторая дверь: сотрудник, вошедший в /admin своей учёткой, не должен вводить
+// сюда ещё один общий пароль. Прежний пароль окружения остаётся запасным входом.
+const section = require('../admin/http');
 
 // Вход — общий модуль на обе панели (та же дверь у /crm, см. engine/crm.js).
 const gate = auth.make({
@@ -260,8 +263,9 @@ async function route(req, res) {
     res.end(html);
   };
 
-  if (!gate.enabled()) {
-    return send(503, shell('SEO', '<h1>Панель выключена</h1><p class="sub">Не задан SEO_ADMIN_PASSWORD.</p>')), true;
+  const staff = await section.staffOk(req);
+  if (!gate.enabled() && !staff) {
+    return send(503, shell('SEO', '<h1>Панель выключена</h1><p class="sub">Не задан SEO_ADMIN_PASSWORD. Вход — через <a href="/admin/login">/admin</a>.</p>')), true;
   }
   if (!db.enabled) {
     return send(503, shell('SEO', '<h1>Нет хранилища</h1><p class="sub">Не задан SASHALAB_PG_URL: вопросы и семантика лежат в базе, без неё панели нечего показывать.</p>')), true;
@@ -273,7 +277,7 @@ async function route(req, res) {
     return send(302, '', { Location: '/seo/', 'Set-Cookie': gate.setCookie() }), true;
   }
 
-  if (!gate.ok(req)) return send(200, loginPage()), true;
+  if (!gate.ok(req) && !staff) return send(200, loginPage()), true;
 
   if (url.pathname === '/seo/logout') {
     return send(302, '', { Location: '/seo/', 'Set-Cookie': gate.clearCookie() }), true;
