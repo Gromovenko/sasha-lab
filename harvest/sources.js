@@ -59,6 +59,39 @@ const SOURCES = [
     // в sitemap-pages.xml. robots.txt (проверено 18.09.2026) разрешает всё,
     // кроме корзины/сортировок/тегов — сбор ничего из этого не трогает.
     seeds: ['https://aozoom-light.ru/'], include: /./, delayMs: 4000, maxPages: 11000 },
+  { host: 'nts-auto.com', kind: 'parts', title: 'NTS-Auto',
+    seeds: ['https://nts-auto.com/'], include: /./, delayMs: 4000, maxPages: 3100 },
+  { host: 'mtflight-shop.com', kind: 'parts', title: 'MTFlight Shop',
+    seeds: ['https://mtflight-shop.com/'], include: /./, delayMs: 4000, maxPages: 1400 },
+  { host: 'tuningfar.com', kind: 'parts', title: 'TuningFar',
+    seeds: ['https://tuningfar.com/'], include: /./, delayMs: 4000, maxPages: 3700 },
+  { host: 'bi-vision.ru', kind: 'parts', title: 'Bi-Vision',
+    // robots.txt площадки прямо задаёт Crawl-delay: 40 — наш загрузчик это поле
+    // сам не читает, поэтому delayMs выставлен руками под него (проверено 18.09.2026).
+    seeds: ['https://bi-vision.ru/'], include: /./, delayMs: 40000, maxPages: 3300 },
+  { host: 'dixel.store', kind: 'parts', title: 'Dixel',
+    // Обычный /sitemap.xml и /sitemap_index.xml пустые — реальная карта у площадки
+    // отдаётся по параметрическому адресу из robots.txt (route=feed/google_sitemap).
+    // Там же own robots.txt закрывает почти все карточки товара
+    // (Disallow: /catalog и /index.php?route=product* — для * и для Yandex одинаково,
+    // проверено 18.09.2026), так что реальный сбор здесь будет заметно меньше
+    // 4,8 тыс. адресов из карты — это не баг, загрузчик просто уважает запрет площадки.
+    seeds: ['https://dixel.store/'],
+    sitemaps: ['https://dixel.store/index.php?route=feed/google_sitemap'],
+    include: /./, delayMs: 4000, maxPages: 4800 },
+  { host: 'statlight.ru', kind: 'parts', title: 'Statlight',
+    seeds: ['https://statlight.ru/'], include: /./, delayMs: 4000, maxPages: 2650 },
+  { host: 'optima-light.ru', kind: 'parts', title: 'Optima-Light',
+    seeds: ['https://optima-light.ru/'], include: /./, delayMs: 4000, maxPages: 3450 },
+  { host: 'electro-kot.ru', kind: 'parts', title: 'Electro-Kot',
+    // Самый крупный источник из новой партии — ~30 тыс. адресов в карте, но не
+    // «всякая автоэлектрика»: основная масса — это готовые страницы вида
+    // «<марка+модель+год> — <ближний/дальний свет | повороты | птф>», то есть
+    // уже сама структура сайта — данные о посадке ламп/линз по моделям, ровно
+    // то, что нужно для /baza/avto/. Полный обход при delayMs 4000 займёт
+    // ориентировочно ~33 часа — оценка занесена сюда, чтобы не удивляться
+    // длительности захода.
+    seeds: ['https://electro-kot.ru/'], include: /./, delayMs: 4000, maxPages: 30000 },
 
   // ── этап 3: сообщество ───────────────────────────────────────────────────
   // Drive2 ВЫКЛЮЧЕН (09.09.2026): robots.txt отдаёт «User-Agent: * / Disallow: /» —
