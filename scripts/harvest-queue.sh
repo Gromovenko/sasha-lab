@@ -42,6 +42,10 @@ for host in "$@"; do
   wait_mem
   echo "  -> $host  (свободно $(free_mb) МБ)"
   (
+    # Сам себя назначаем первой жертвой OOM-killer: запущенный по ssh процесс
+    # наследует oom_score_adj от sshd (-1000 после ops/ru-safety-net.sh) и стал бы
+    # для ядра неприкосновенным — умирал бы прод, а не сбор.
+    echo 900 > /proc/self/oom_score_adj 2>/dev/null || true
     nice -n 15 ionice -c3 \
       node --max-old-space-size="$HEAP_MB" harvest/run.js crawl "$host" ${LIMIT:+--limit "$LIMIT"} \
       >> "$LOGDIR/$host.log" 2>&1
