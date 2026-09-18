@@ -5,6 +5,7 @@ const telegram = require('./telegram');
 const email = require('./email');
 const avito = require('./avito');
 const whatsapp = require('./whatsapp');
+const sms = require('./sms');
 const manual = require('./manual');
 
 const web = {
@@ -15,7 +16,7 @@ const web = {
   send: async ({ to, text, subject }) => (/@/.test(String(to || '')) ? email.send({ to, text, subject }) : manual.send()),
 };
 
-const ALL = [telegram, avito, whatsapp, email, web, manual];
+const ALL = [telegram, avito, whatsapp, email, sms, web, manual];
 const byId = Object.fromEntries(ALL.map((c) => [c.id, c]));
 
 const get = (id) => byId[id] || manual;
@@ -33,4 +34,4 @@ async function send(channelId, args) {
 
 const status = () => ALL.map((c) => ({ id: c.id, title: c.title, configured: c.configured(), inbound: Boolean(c.inbound), verified: c.verified !== false }));
 
-module.exports = { get, send, status, ALL, telegram, avito, whatsapp, email, web, manual };
+module.exports = { get, send, status, ALL, telegram, avito, whatsapp, email, sms, web, manual };

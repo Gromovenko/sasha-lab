@@ -1,18 +1,23 @@
 // Авито-мессенджер. Там живёт основной поток обращений у сервисов «в гараже»,
 // и там же беда с ответом «сразу» — у крупных конкурентов сидит админ.
 //
-// Ключи: AVITO_CLIENT_ID, AVITO_CLIENT_SECRET, AVITO_USER_ID (профиль).
-// Код написан по документации api.avito.ru и на живых ключах НЕ проверялся —
-// пока их нет, канал сам говорит «не настроен», а ответ уходит через ручной
-// канал (мастер копирует готовый текст кнопкой в панели). Именно поэтому
-// интерфейс канала один на всех: подключение ключей ничего в движке не меняет.
+// Ключи (личный кабинет Авито → Настройки → API, developers.avito.ru):
+//   AVITO_CLIENT_ID, AVITO_CLIENT_SECRET — обязательны;
+//   AVITO_USER_ID — необязателен: если не задан, берём из /core/v1/accounts/self.
+// ЛОГИН И ПАРОЛЬ ОТ КАБИНЕТА ЗДЕСЬ НЕ РАБОТАЮТ: у /token единственный способ —
+// client_credentials с ключами приложения, пара «телефон/пароль» отвечает
+// unauthorized_client (проверено 18.09.2026 на живом эндпоинте с RU).
+//
+// Ещё одно живое ограничение: api.avito.ru с зарубежного адреса не отвечает
+// вовсе (с EU — таймаут). Всё, что ходит в Авито, работает только с RU.
 const files = require('../files');
 
 const id = 'avito';
 const title = 'Авито';
-const configured = () => Boolean(process.env.AVITO_CLIENT_ID && process.env.AVITO_CLIENT_SECRET && process.env.AVITO_USER_ID);
+const configured = () => Boolean(process.env.AVITO_CLIENT_ID && process.env.AVITO_CLIENT_SECRET);
 
 let token = { value: null, exp: 0 };
+let selfId = null;
 
 async function auth() {
   if (token.value && Date.now() < token.exp) return token.value;
@@ -26,7 +31,8 @@ async function auth() {
     signal: AbortSignal.timeout(20000),
   });
   const j = await res.json().catch(() => ({}));
-  if (!res.ok || !j.access_token) throw new Error(`avito token: ${res.status} ${j.error_description || ''}`.trim());
+  // Авито отвечает 200 и телом с ошибкой — на статус полагаться нельзя.
+  if (!j.access_token) throw new Error(`avito token: ${res.status} ${j.error_description || j.error || ''}`.trim());
   token = { value: j.access_token, exp: Date.now() + (Number(j.expires_in || 3600) - 60) * 1000 };
   return token.value;
 }
@@ -40,29 +46,92 @@ async function api(path, { method = 'GET', body } = {}) {
     signal: AbortSignal.timeout(30000),
   });
   const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`avito ${path}: ${res.status} ${j.error?.message || ''}`.trim());
+  if (!res.ok) throw new Error(`avito ${path}: ${res.status} ${j.error?.message || j.error_description || ''}`.trim());
   return j;
 }
 
+// Профиль. Отдельная ручка нужна не ради красоты: без user_id не собрать ни
+// один адрес мессенджера, а требовать его руками — лишний повод ошибиться.
+async function self() {
+  const r = await api('/core/v1/accounts/self');
+  selfId = String(r.id);
+  return r;
+}
+
+async function userId() {
+  if (process.env.AVITO_USER_ID) return String(process.env.AVITO_USER_ID);
+  if (selfId) return selfId;
+  await self();
+  return selfId;
+}
+
 async function send({ to, text }) {
-  if (!configured()) return { ok: false, error: 'нет ключей Авито (AVITO_CLIENT_ID/SECRET/USER_ID)' };
+  if (!configured()) return { ok: false, error: 'нет ключей Авито (AVITO_CLIENT_ID/AVITO_CLIENT_SECRET)' };
   try {
-    const r = await api(`/messenger/v1/accounts/${process.env.AVITO_USER_ID}/chats/${to}/messages`,
+    const uid = await userId();
+    const r = await api(`/messenger/v1/accounts/${uid}/chats/${to}/messages`,
       { method: 'POST', body: { message: { text }, type: 'text' } });
     return { ok: true, id: r.id ? String(r.id) : null };
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
-// Непрочитанные чаты — вход для опроса в worker.js.
-async function unread() {
-  if (!configured()) return [];
-  const r = await api(`/messenger/v2/accounts/${process.env.AVITO_USER_ID}/chats?unread_only=true&limit=50`);
+// Список чатов постранично. unreadOnly — вход для опроса в worker.js,
+// без него — полный обход переписки для разбора (`avito-dialogs.js`).
+async function chats({ unreadOnly = false, limit = 100, offset = 0 } = {}) {
+  const uid = await userId();
+  const qs = new URLSearchParams({ limit: String(Math.min(limit, 100)), offset: String(offset) });
+  if (unreadOnly) qs.set('unread_only', 'true');
+  const r = await api(`/messenger/v2/accounts/${uid}/chats?${qs}`);
   return r.chats || [];
 }
 
-async function messages(chatId) {
-  const r = await api(`/messenger/v3/accounts/${process.env.AVITO_USER_ID}/chats/${chatId}/messages/?limit=30`);
-  return r.messages || [];
+// Все чаты, сколько бы их ни было: Авито отдаёт максимум 100 за раз.
+async function allChats({ max = 1000, unreadOnly = false, onPage = null } = {}) {
+  const out = [];
+  for (let offset = 0; out.length < max; offset += 100) {
+    const page = await chats({ unreadOnly, limit: 100, offset });
+    out.push(...page);
+    if (onPage) await onPage(page, out.length);
+    if (page.length < 100) break;
+  }
+  return out.slice(0, max);
+}
+
+const unread = async () => (configured() ? chats({ unreadOnly: true, limit: 100 }) : []);
+
+async function messages(chatId, { limit = 100, offset = 0 } = {}) {
+  const uid = await userId();
+  const r = await api(`/messenger/v3/accounts/${uid}/chats/${chatId}/messages/?limit=${Math.min(limit, 100)}&offset=${offset}`);
+  return Array.isArray(r) ? r : (r.messages || []);
+}
+
+// Отмечаем чат прочитанным ТОЛЬКО после того, как сообщение разобрано и ответ
+// отправлен: иначе сбой в середине проглотит обращение навсегда.
+async function markRead(chatId) {
+  const uid = await userId();
+  try { await api(`/messenger/v1/accounts/${uid}/chats/${chatId}/read`, { method: 'POST' }); return true; }
+  catch { return false; }
+}
+
+// Ссылка на картинку из сообщения: у Авито размеры лежат словарём, берём самый
+// большой — зрению нужны детали (посадочное место за фарой видно только крупно).
+function imageUrl(msg) {
+  const sizes = msg?.content?.image?.sizes;
+  if (!sizes || typeof sizes !== 'object') return null;
+  const byWidth = Object.entries(sizes).sort((a, b) => (Number.parseInt(b[0], 10) || 0) - (Number.parseInt(a[0], 10) || 0));
+  return byWidth[0]?.[1] || null;
+}
+
+// Текст любого сообщения одной строкой — для разбора и для отчёта по диалогам.
+function messageText(msg) {
+  const c = msg?.content || {};
+  if (c.text) return String(c.text);
+  if (c.item?.title) return `[объявление] ${c.item.title}`;
+  if (c.call) return '[звонок]';
+  if (c.image) return '[фото]';
+  if (c.location?.title) return `[адрес] ${c.location.title}`;
+  if (c.link?.url) return `[ссылка] ${c.link.url}`;
+  return msg?.type ? `[${msg.type}]` : '';
 }
 
 // Картинку из чата забираем по прямой ссылке: она уже подписана токеном чата.
@@ -72,4 +141,7 @@ async function download(dealId, url, name = 'avito.jpg') {
   return files.save(dealId, name, Buffer.from(await res.arrayBuffer()));
 }
 
-module.exports = { id, title, configured, send, unread, messages, download, api, inbound: true, verified: false };
+module.exports = {
+  id, title, configured, send, unread, chats, allChats, messages, markRead,
+  download, api, self, userId, imageUrl, messageText, inbound: true, verified: false,
+};

@@ -11,6 +11,8 @@ const channels = require('./channels');
 const vision = require('./vision');
 const quote = require('./quote');
 const { memoryStore } = require('./memory-store');
+const notify = require('./notify');
+const dialogs = require('./avito-dialogs');
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -33,9 +35,20 @@ sasha-lab · движок заявок
   demo [--pack id] [--text "…"] [--finding код]
                             прогон всего пути в памяти: ни базы, ни ключей не нужно
 
+  avito check               проверить ключи Авито: токен, профиль, доступ к чатам
+  avito chats [--limit 20]  свежие диалоги Авито одной таблицей
+  avito dialogs [--limit 500] [--file путь] [--report путь]
+                            выкачать ВСЮ переписку и разобрать: кто что спрашивает,
+                            сколько ушло без ответа, за сколько мы отвечаем
+  avito report [--file путь]  пересобрать отчёт по уже сохранённому дампу (без сети)
+  avito reply <chatId> --text "…"   отправить сообщение в чат Авито
+  notify test [--text "…"]  проверить лестницу уведомления админа проекта
+
 Окружение: SASHALAB_PG_URL, NEURALDEEP_API_KEY (разбор и зрение),
 TELEGRAM_BOT_TOKEN, MASTER_CHAT_ID, RESEND_API_KEY/RESEND_FROM,
-AVITO_CLIENT_ID/AVITO_CLIENT_SECRET/AVITO_USER_ID, ENGINE_AUTOSEND=off|questions|all
+AVITO_CLIENT_ID/AVITO_CLIENT_SECRET, ENGINE_AUTOSEND=off|questions|all,
+AVITO_AUTOSEND (автодиалог только в Авито), ADMIN_PHONE + SMSRU_API_ID
+(уведомление админа проекта), ADMIN_NOTIFY=telegram,sms,whatsapp
 `;
 
 function printDraft(r) {
@@ -113,6 +126,70 @@ async function main() {
       console.log(r.length ? JSON.stringify(r, null, 2) : 'назревших напоминаний нет');
       break;
     }
+    // ── Авито ──────────────────────────────────────────────────────────────
+    case 'avito': {
+      const sub = argv[1] || 'check';
+      if (!channels.avito.configured() && sub !== 'report') {
+        console.error('нет ключей: AVITO_CLIENT_ID / AVITO_CLIENT_SECRET (кабинет Авито → Настройки → API).');
+        console.error('Логин и пароль от кабинета к API не подходят — у /token только client_credentials.');
+        process.exitCode = 1;
+        break;
+      }
+      if (sub === 'check') {
+        const me = await channels.avito.self();
+        console.log(`✓ токен получен, профиль: ${me.name || me.email || me.id} (id ${me.id})`);
+        const list = await channels.avito.chats({ limit: 10 });
+        const un = await channels.avito.chats({ unreadOnly: true, limit: 100 });
+        console.log(`✓ мессенджер доступен: видно ${list.length} диалогов на первой странице, непрочитанных ${un.length}`);
+        break;
+      }
+      if (sub === 'chats') {
+        const list = await channels.avito.chats({ limit: Number(flag('limit', 20)) });
+        for (const c of list) {
+          const me = String(await channels.avito.userId());
+          const who = (c.users || []).find((u) => String(u.id) !== me)?.name || '—';
+          const lastText = channels.avito.messageText(c.last_message || {});
+          console.log(`  ${String(c.id).padEnd(24)} ${String(who).padEnd(18)} ${c.context?.value?.title || ''} · ${lastText.slice(0, 60)}`);
+        }
+        console.log(`всего показано: ${list.length}`);
+        break;
+      }
+      if (sub === 'dialogs') {
+        const max = Number(flag('limit', 500));
+        process.stdout.write('качаю переписку: ');
+        const all = await dialogs.fetchAll({ max, onProgress: (i, n) => { if (i % 10 === 0 || i === n) process.stdout.write(`${i}/${n} `); } });
+        console.log('');
+        const stat = dialogs.analyze(all);
+        const file = dialogs.save(all, stat, flag('file', null));
+        console.log(`\n${dialogs.report(stat)}\n`);
+        console.log(`дамп переписки: ${file} (в git не едет — это личные данные клиентов)`);
+        if (flag('report')) { fs.writeFileSync(flag('report'), dialogs.report(stat)); console.log(`отчёт: ${flag('report')}`); }
+        break;
+      }
+      if (sub === 'report') {
+        const file = flag('file', require('path').join(__dirname, '..', 'seo', 'data', 'avito-dialogs.json'));
+        const dump = JSON.parse(fs.readFileSync(file, 'utf8'));
+        console.log(dialogs.report(dialogs.analyze(dump.dialogs || [])));
+        break;
+      }
+      if (sub === 'reply') {
+        const r = await channels.avito.send({ to: argv[2], text: flag('text', '') });
+        console.log(r.ok ? `отправлено (${r.id || 'без id'})` : `не ушло: ${r.error}`);
+        break;
+      }
+      console.log('avito: check | chats | dialogs | report | reply');
+      break;
+    }
+
+    case 'notify': {
+      const r = await notify.admin({
+        text: flag('text', 'Проверка связи: движок заявок sasha-lab умеет достучаться до админа проекта.'),
+        sms: flag('text', 'Проверка: движок sasha-lab на связи.'), force: true,
+      });
+      console.log(r.ok ? `ушло через ${r.via}` : `не ушло ни по одному маршруту: ${r.tried.join('; ') || 'маршруты не настроены'}`);
+      break;
+    }
+
     // Демонстрация без базы и без ключей: видно, что получит клиент.
     case 'demo': {
       const packId = flag('pack', packs.DEFAULT_ID);
