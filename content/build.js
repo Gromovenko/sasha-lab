@@ -358,7 +358,10 @@ async function vehicleData() {
     SELECT v.slug, v.make, v.model, v.year_from, v.year_to,
            json_agg(json_build_object('lens', f.lens, 'approach', f.approach,
              'headlight', f.headlight, 'hours', f.hours, 'notes', f.notes,
-             'confidence', f.confidence, 'status', f.status)
+             'sealant', f.sealant, 'adaptive', f.adaptive,
+             'low_beam_source', f.low_beam_source, 'factory_lens', f.factory_lens,
+             'confidence', f.confidence, 'status', f.status,
+             'source_url', (SELECT d.url FROM documents d WHERE d.id = f.evidence[1]))
              ORDER BY (f.status = 'confirmed') DESC, f.confidence DESC) AS fitment,
            count(*) FILTER (WHERE f.status = 'confirmed') AS confirmed,
            count(*) AS total
@@ -385,7 +388,16 @@ function vehiclePage(v, docs) {
     + `по данным работ студии и открытых источников.`;
   const rows = (v.fitment || []).slice(0, 8).map((f) => `<tr><td>${esc(f.lens || '—')}</td>`
     + `<td>${esc(f.approach || 'не указан')}</td><td>${f.hours ? `${f.hours} ч` : '—'}</td>`
-    + `<td>${f.status === 'confirmed' ? 'проверено студией' : 'по источникам'}</td></tr>`).join('\n');
+    + `<td>${f.status === 'confirmed' ? 'проверено студией' : 'по источникам'}</td>`
+    + `<td>${f.source_url ? `<a href="${esc(f.source_url)}" rel="nofollow noopener" target="_blank">источник</a>` : '—'}</td></tr>`).join('\n');
+  // Завод. конструктив — своя таблица: сюда попадают только факты, где известно
+  // хоть что-то про герметик/адаптивность/источник ближнего света/заводскую линзу,
+  // остальные fitment-строки (только про ретрофит) в неё не идут.
+  const specRows = (v.fitment || []).filter((f) => f.sealant || f.adaptive != null || f.low_beam_source || f.factory_lens)
+    .slice(0, 8).map((f) => `<tr><td>${esc(f.sealant || '—')}</td>`
+    + `<td>${f.adaptive == null ? '—' : (f.adaptive ? 'есть' : 'нет')}</td>`
+    + `<td>${esc(f.low_beam_source || '—')}</td><td>${esc(f.factory_lens || '—')}</td>`
+    + `<td>${f.source_url ? `<a href="${esc(f.source_url)}" rel="nofollow noopener" target="_blank">источник</a>` : '—'}</td></tr>`).join('\n');
   const related = pickRelated({ tags: ['линзы'], slug: v.slug, rubric: 'linzy' }, docs);
   const body = `<article>
 <h1>${esc(title)}</h1>
@@ -393,10 +405,13 @@ function vehiclePage(v, docs) {
 свет «размазан» по асфальту, встречные моргают. Ниже — что в эту фару физически
 встаёт и чем отличаются варианты.</p>
 <h2>Что ставят в фары ${esc(name)}</h2>
-<table class="fit"><thead><tr><th>Линза / модуль</th><th>Способ</th><th>Работа</th><th>Откуда данные</th></tr></thead>
+<table class="fit"><thead><tr><th>Линза / модуль</th><th>Способ</th><th>Работа</th><th>Откуда данные</th><th>Ссылка</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <p class="note">Данные без пометки «проверено студией» собраны из открытых источников
 и требуют осмотра конкретной фары: у одной модели за пару лет меняется и фара, и крепление.</p>
+${specRows ? `<h2>Конструктив штатной фары</h2>
+<table class="fit"><thead><tr><th>Герметик</th><th>Адаптивный свет</th><th>Ближний свет с завода</th><th>Заводская линза</th><th>Ссылка</th></tr></thead>
+<tbody>${specRows}</tbody></table>` : ''}
 <h2>Вскрывать фару или нет</h2>
 <p>Ответ зависит от того, что стоит с завода${docs.some((d) => d.meta.slug === 'ustanovka-linz-so-vskrytiem-fary')
     ? `. Разбор способов и последствий — в материале <a href="/baza/linzy/ustanovka-linz-so-vskrytiem-fary/">про установку со вскрытием</a>` : ''}.</p>

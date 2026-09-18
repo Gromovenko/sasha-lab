@@ -174,3 +174,16 @@ test('русский разбор не изменился', () => {
   assert.equal(f.approach, 'со вскрытием');
   assert.equal(f.hours, 4);
 });
+
+test('завод. конструктив фары: герметик, адаптивный свет, источник ближнего света, заводская линза', () => {
+  const out = facts.parseDoc({
+    title: 'Haval Jolion: фара на полиуретановом герметике, заводская линза Koito, есть адаптивный свет (AFS), со штатным ксеноном',
+    text: 'Haval Jolion: фара на полиуретановом герметике, заводская линза Koito, есть адаптивный свет (AFS), со штатным ксеноном. Поставили линзы Aozoom A3+.',
+    meta: { kind: 'works' },
+  });
+  const f = out.fitment[0];
+  assert.equal(f.sealant, 'полиуретановый герметик');
+  assert.equal(f.adaptive, true);
+  assert.equal(f.low_beam_source, 'штатный ксенон');
+  assert.equal(f.factory_lens, 'Koito');
+});

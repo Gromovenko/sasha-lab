@@ -120,13 +120,17 @@ async function upsertFitment(f) {
   if (!db.enabled) { append('fitment', f); return null; }
   const row = await db.one(`
     INSERT INTO fitment (vehicle_id, headlight, lens, approach, needs_opening, difficulty,
-                         hours, notes, confidence, evidence)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                         hours, notes, confidence, evidence, sealant, adaptive, low_beam_source, factory_lens)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
     ON CONFLICT (vehicle_id, lens, approach) DO UPDATE SET
       headlight = COALESCE(EXCLUDED.headlight, fitment.headlight),
       needs_opening = COALESCE(EXCLUDED.needs_opening, fitment.needs_opening),
       difficulty = COALESCE(EXCLUDED.difficulty, fitment.difficulty),
       notes = COALESCE(EXCLUDED.notes, fitment.notes),
+      sealant = COALESCE(EXCLUDED.sealant, fitment.sealant),
+      adaptive = COALESCE(EXCLUDED.adaptive, fitment.adaptive),
+      low_beam_source = COALESCE(EXCLUDED.low_beam_source, fitment.low_beam_source),
+      factory_lens = COALESCE(EXCLUDED.factory_lens, fitment.factory_lens),
       -- уверенность растёт от повторов в независимых источниках, но не выше 0.95:
       -- подтверждение мастером — отдельное действие (status='confirmed')
       confidence = LEAST(0.95, GREATEST(fitment.confidence, EXCLUDED.confidence) + 0.05),
@@ -135,7 +139,8 @@ async function upsertFitment(f) {
     RETURNING id`,
     [f.vehicle_id, f.headlight || null, f.lens || '', f.approach || '',
       f.needs_opening ?? null, f.difficulty || null, f.hours || null, f.notes || null,
-      f.confidence ?? 0.5, f.evidence || []]);
+      f.confidence ?? 0.5, f.evidence || [],
+      f.sealant || null, f.adaptive ?? null, f.low_beam_source || null, f.factory_lens || null]);
   return row.id;
 }
 

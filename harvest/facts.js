@@ -25,20 +25,38 @@ const APPROACH = [
   [/замен[аы]\s+(модул|фары целиком)|housing\s+swap|headlight\s+swap|retrofit\s+housings?/i, 'замена модуля'],
 ];
 const HEADLIGHT = [
-  [/штатн\w*\s+ксенон|заводск\w*\s+ксенон|(?:factory|oem|stock)\s+(?:bi-?)?(?:hid|xenon)/i, 'штатный ксенон'],
-  [/штатн\w*\s+(led|лед)|заводск\w*\s+led|(?:factory|oem|stock)\s+led/i, 'штатный led'],
-  [/линзован\w*\s+галоген|halogen\s+projector/i, 'линзованный галоген'],
-  [/рефлектор\w*|галоген|halogen|reflector/i, 'галоген'],
+  [/штатн[\wа-яёА-ЯЁ]*\s+ксенон|заводск[\wа-яёА-ЯЁ]*\s+ксенон|(?:factory|oem|stock)\s+(?:bi-?)?(?:hid|xenon)/i, 'штатный ксенон'],
+  [/штатн[\wа-яёА-ЯЁ]*\s+(led|лед)|заводск[\wа-яёА-ЯЁ]*\s+led|(?:factory|oem|stock)\s+led/i, 'штатный led'],
+  [/линзован[\wа-яёА-ЯЁ]*\s+галоген|halogen\s+projector/i, 'линзованный галоген'],
+  [/рефлектор[\wа-яёА-ЯЁ]*|галоген|halogen|reflector/i, 'галоген'],
 ];
 const DIFFICULTY = [
-  [/сложн\w*\s+(работа|фара|случай)|намучил|провозил\w+\s+(весь|два)|nightmare|pain\s+in\s+the|tricky|difficult/i, 'сложная'],
-  [/лёгк\w*|легк\w*\s+(работа|фара)|за\s+час|easy\s+(?:job|install|retrofit)|straightforward/i, 'лёгкая'],
+  [/сложн[\wа-яёА-ЯЁ]*\s+(работа|фара|случай)|намучил|провозил[\wа-яёА-ЯЁ]+\s+(весь|два)|nightmare|pain\s+in\s+the|tricky|difficult/i, 'сложная'],
+  [/лёгк[\wа-яёА-ЯЁ]*|легк[\wа-яёА-ЯЁ]*\s+(работа|фара)|за\s+час|easy\s+(?:job|install|retrofit)|straightforward/i, 'лёгкая'],
 ];
 const HOURS_RE = /(\d{1,2})\s*(?:час|ч\.|hours?\b|hrs?\b)/i;
 
+// Завод. конструктив фары — отдельно от того, что доустановили (см. HEADLIGHT выше).
+const SEALANT = [
+  [/полиуретан[\wа-яёА-ЯЁ]*|polyurethane/i, 'полиуретановый герметик'],
+  [/битум[\wа-яёА-ЯЁ]*|bitumen/i, 'битумный герметик'],
+  [/термоклей|hot[\s-]*melt/i, 'термоклей'],
+  [/силикон[\wа-яёА-ЯЁ]*(?!\s*смазк)|silicone/i, 'силиконовый герметик'],
+];
+const ADAPTIVE_RE = /адаптивн[\wа-яёА-ЯЁ]*\s+(?:фар|свет)|\bafs\b|поворотн[\wа-яёА-ЯЁ]*\s+модул|динамическ[\wа-яёА-ЯЁ]*\s+свет|bending\s+light|cornering\s+light|adaptive\s+(?:headlight|beam|front[\s-]?lighting)/i;
+const LOW_BEAM_SOURCE = [
+  [/би-?ксенон[\wа-яёА-ЯЁ]*|bi-?xenon/i, 'биксенон'],
+  [/штатн[\wа-яёА-ЯЁ]*\s+ксенон|заводск[\wа-яёА-ЯЁ]*\s+ксенон|(?:factory|oem|stock)\s+(?:hid|xenon)/i, 'штатный ксенон'],
+  [/штатн[\wа-яёА-ЯЁ]*\s+(?:led|лед)|заводск[\wа-яёА-ЯЁ]*\s+led|(?:factory|oem|stock)\s+led/i, 'штатный led'],
+  [/лазерн[\wа-яёА-ЯЁ]*\s+свет|laser\s+light/i, 'лазерный'],
+  [/галоген[\wа-яёА-ЯЁ]*|halogen/i, 'галоген'],
+];
+// Известные производители заводских линз/модулей — имя рядом со словом «завод./штатн.»
+const FACTORY_LENS_RE = /(?:заводск[\wа-яёА-ЯЁ]*|штатн[\wа-яёА-ЯЁ]*|oem|factory|stock)[^.\n]{0,20}\b(hella|valeo|koito|magneti\s*marelli|denso|stanley|visteon|jw\s*speaker|amp)\b[^.\n]{0,20}/i;
+
 // Тип комплектующего по названию — для каталога parts.
 const PART_KINDS = [
-  [/переходн\w*\s+рамк|рамк[аи]|адаптер|крепёж|креплени/i, 'adapter'],
+  [/переходн[\wа-яёА-ЯЁ]*\s+рамк|рамк[аи]|адаптер|крепёж|креплени/i, 'adapter'],
   [/линз|lens|модул/i, 'lens'],
   [/блок\s*розжиг|балласт|ballast|драйвер/i, 'ballast'],
   [/ламп|bulb|цокол|h[1479]\b|hb[34]\b|d[1-4]s\b/i, 'bulb'],
@@ -70,6 +88,11 @@ function parseDoc(doc) {
   const headlight = firstMatch(HEADLIGHT, text);
   const difficulty = firstMatch(DIFFICULTY, text);
   const hours = Number((text.match(HOURS_RE) || [])[1]) || null;
+  const sealant = firstMatch(SEALANT, text);
+  const adaptive = ADAPTIVE_RE.test(text) ? true : null;
+  const lowBeamSource = firstMatch(LOW_BEAM_SOURCE, text);
+  const factoryLensMatch = text.match(FACTORY_LENS_RE);
+  const factoryLens = factoryLensMatch ? factoryLensMatch[1].replace(/\s+/g, ' ') : null;
 
   const out = { vehicles: found, fitment: [], part: null };
 
@@ -82,6 +105,7 @@ function parseDoc(doc) {
         approach: approach || '', headlight,
         needs_opening: approach === 'со вскрытием' ? true : approach === 'без вскрытия' ? false : null,
         difficulty, hours,
+        sealant, adaptive, low_beam_source: lowBeamSource, factory_lens: factoryLens,
         // 0.5 = «в одном источнике рядом стоят машина и линза». Повтор в другом
         // источнике поднимет уверенность в store.upsertFitment.
         confidence: 0.5,
