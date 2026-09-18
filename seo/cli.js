@@ -17,6 +17,9 @@ sasha-lab · SEO
 
   wordstat [фраза ...]      частотность по фразам (по умолчанию — базовый список)
                             20 ₽/вызов; --force (игнорировать 30-дн. кэш), --max N
+                            --test: без API и без денег, ответы из фикстуры
+                            --clear-test: убрать тестовые фразы из базы
+  answers [--min 50]        раздел /baza/otvety/: что закрыто ответом, что в очереди
   positions [--limit 30]    снять позиции по самым частотным фразам
   webmaster [--from --to]   реальные запросы сайта из Яндекс.Вебмастера
   gsc [--from --to]         реальные запросы сайта из Google Search Console
@@ -42,13 +45,29 @@ async function main() {
     case 'wordstat': {
       // Фразы — всё, что не флаг и не значение флага («--max 1» — не фраза «1»).
       const phrases = argv.slice(1).filter((a, i, all) => !a.startsWith('--') && !(all[i - 1] || '').startsWith('--'));
+      if (argv.includes('--clear-test')) {
+        console.log(`убрано тестовых фраз: ${await jobs.clearTestKeywords()}`);
+        break;
+      }
+      const test = argv.includes('--test');
       const r = await jobs.collectWordstat(phrases.length ? phrases : undefined,
-        { force: argv.includes('--force'), maxCalls: Number(flag('max', undefined) ?? jobs.WORDSTAT_MAX_CALLS) });
+        { force: argv.includes('--force'), test,
+          maxCalls: Number(flag('max', undefined) ?? jobs.WORDSTAT_MAX_CALLS) });
+      if (test) console.log('ТЕСТОВЫЙ прогон: цифры из фикстуры, денег не потрачено, источник wordstat-test');
       for (const c of r.collected) console.log(`  ${c.seed}: всего ${c.total}, собрано фраз ${c.got}`);
       for (const s of r.skipped) console.log(`  · ${s.seed}: пропущено — ${s.why}`);
       for (const e of r.errors) console.error(`  ! ${e.seed}: ${e.error}`);
       console.log(`вызовов Wordstat: ${r.calls}, оплачено ${r.billed} (≈${r.rub} ₽), всего с начала: ${r.spend.calls} (≈${r.spend.rub} ₽)`);
       console.log(`в базе фраз: ${await store.keywords.count()}`);
+      break;
+    }
+    case 'answers': {
+      const r = await jobs.answersDemand({ minCount: Number(flag('min', 50)), limit: Number(flag('limit', 40)) });
+      console.log(`страниц-ответов в разделе: ${r.answers}${r.test ? '  (в базе есть ТЕСТОВЫЕ фразы wordstat-test)' : ''}`);
+      console.log('ЗАКРЫТО:');
+      for (const c of r.covered.slice(0, 40)) console.log(`  ${String(c.demand).padStart(7)}  ${c.phrase}  →  ${c.url} [${c.kind}]`);
+      console.log('В ОЧЕРЕДЬ НА ОТВЕТ (спрос есть, страницы нет):');
+      for (const q of r.queue) console.log(`  ${String(q.demand).padStart(7)}  ${q.phrase}${q.url ? `   ближайшее: ${q.url} (${q.score})` : ''}`);
       break;
     }
     case 'positions': {
@@ -114,9 +133,10 @@ async function main() {
       const stats = {};
       // Wordstat платный (20 ₽/вызов): в частых дневных прогонах его пропускаем,
       // бесплатные Вебмастер и Search Console дают тот же свежий спрос.
+      const test = argv.includes('--test');
       const sources = argv.includes('--cheap')
         ? [['webmaster', () => jobs.pullWebmaster({})], ['gsc', () => jobs.pullGsc({})]]
-        : [['wordstat', () => jobs.collectWordstat()], ['webmaster', () => jobs.pullWebmaster({})], ['gsc', () => jobs.pullGsc({})]];
+        : [['wordstat', () => jobs.collectWordstat(undefined, { test })], ['webmaster', () => jobs.pullWebmaster({})], ['gsc', () => jobs.pullGsc({})]];
       for (const [name, fn] of sources) {
         try { const r = await fn(); stats[name] = Array.isArray(r) ? r.length : r.collected?.length ?? 0; }
         catch (e) { stats[name] = `ошибка: ${e.message.slice(0, 120)}`; console.error(`  ! ${name}: ${e.message}`); }

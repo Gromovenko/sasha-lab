@@ -60,11 +60,26 @@ async function noteWordstatSpend(calls) {
   return cur;
 }
 
-async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCalls = WORDSTAT_MAX_CALLS } = {}) {
+// Тестовый режим (`--test`): те же шаги, но ответы берутся из файла-фикстуры
+// (seo/lib/wordstatFixture.js). Нужен, пока у проекта нет ключа: путь
+// «спрос → кластеры → очередь ответов» отлаживается и показывается владельцу
+// за 0 ₽. Строки помечаются источником `wordstat-test`, расход не пишется,
+// на сайт цифры оттуда не попадают.
+const TEST_SOURCE = 'wordstat-test';
+
+async function clearTestKeywords() {
+  const rs = await store.db.q(`DELETE FROM keywords WHERE source = $1 RETURNING 1`, [TEST_SOURCE]);
+  return rs.length;
+}
+
+async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCalls = WORDSTAT_MAX_CALLS, test = false } = {}) {
   const collected = [];
   const errors = [];
   const skipped = [];
-  const fresh = force ? new Set() : await wordstatFreshSeeds(WORDSTAT_TTL_DAYS);
+  const fixture = test ? require('./wordstatFixture') : null;
+  // В тестовом режиме 30-дневный кэш не нужен: вызов ничего не стоит,
+  // а прогон должен быть воспроизводимым.
+  const fresh = (force || test) ? new Set() : await wordstatFreshSeeds(WORDSTAT_TTL_DAYS);
   let calls = 0;    // попыток (для потолка за прогон)
   let billed = 0;   // удачных ответов — только они стоят денег
   for (const phrase of phrases) {
@@ -72,14 +87,14 @@ async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCal
     if (calls >= maxCalls) { skipped.push({ seed: phrase, why: `потолок ${maxCalls} вызовов за прогон` }); continue; }
     try {
       calls += 1;
-      const r = await yandex.wordstatTop(phrase, regions ? { regions } : {});
+      const r = fixture ? fixture.top(phrase) : await yandex.wordstatTop(phrase, regions ? { regions } : {});
       const rows = [...r.results, ...r.associations].map((x) => ({
         phrase: x.phrase, count: x.count, seed: phrase, checkedAt: today(),
       }));
-      billed += 1;
-      await store.keywords.upsert(rows, 'wordstat');
-      collected.push({ seed: phrase, total: r.totalCount, got: rows.length });
-      await sleep(1100);                       // синхронный лимит — 1 запрос/с
+      if (!test) billed += 1;
+      await store.keywords.upsert(rows, test ? TEST_SOURCE : 'wordstat');
+      collected.push({ seed: phrase, total: r.totalCount, got: rows.length, test });
+      if (!test) await sleep(1100);            // синхронный лимит — 1 запрос/с
     } catch (e) {
       // Ошибки авторизации и сервера Яндекс не тарифицирует (тариф AI Studio) —
       // ответа не было, в расход не идёт.
@@ -87,7 +102,7 @@ async function collectWordstat(phrases = SEEDS, { regions, force = false, maxCal
     }
   }
   const spend = billed ? await noteWordstatSpend(billed) : await store.kv.get('wordstat_spend', { calls: 0, rub: 0 });
-  return { collected, errors, skipped, calls, billed, rub: billed * WORDSTAT_RUB_PER_CALL, spend };
+  return { collected, errors, skipped, calls, billed, test, rub: billed * WORDSTAT_RUB_PER_CALL, spend };
 }
 
 // ── позиции ────────────────────────────────────────────────────────────────
@@ -177,6 +192,38 @@ async function gaps({ minCount = 30, limit = 60 } = {}) {
   return out;
 }
 
+// ── раздел ответов: чем закрыт спрос и что писать следующим ───────────────
+// Отвечает на вопрос владельца «по каким запросам у нас есть ответ, а по каким
+// нет». Страницы раздела при этом НЕ рождаются из спроса автоматически: сюда
+// попадает очередь, ответ пишет человек (content/otvety/*.md).
+async function answersDemand({ minCount = 50, limit = 40 } = {}) {
+  const mem = require('./memory');
+  const pages = coverage();
+  const kws = await store.keywords.rows();
+  const seen = new Set();
+  const covered = [];
+  const queue = [];
+  for (const k of kws.sort((a, b) => (b.count || b.shows || 0) - (a.count || a.shows || 0))) {
+    const key = mem.norm(k.phrase);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const demand = k.count || k.shows || k.impressions || 0;
+    let best = { page: null, score: 0 };
+    for (const p of pages) {
+      const score = mem.coverage(k.phrase, { title: p.title, queries: p.queries || [] });
+      if (score > best.score) best = { page: p, score };
+    }
+    const row = { phrase: k.phrase, demand, source: k.source,
+      url: best.page ? best.page.url : null, kind: best.page ? (best.page.kind || 'material') : null,
+      score: Number(best.score.toFixed(2)) };
+    if (best.score >= mem.COVERED) covered.push(row);
+    else if (demand >= minCount) queue.push(row);
+  }
+  return { covered, queue: queue.slice(0, limit),
+    answers: pages.filter((p) => p.kind === 'answer').length,
+    test: kws.some((k) => k.source === TEST_SOURCE) };
+}
+
 // Сводка для панели: спрос, факт по позициям, покрытие.
 async function summary() {
   const kw = await store.keywords.rows();
@@ -195,4 +242,5 @@ async function summary() {
   };
 }
 
-module.exports = { SEEDS, WORDSTAT_RUB_PER_CALL, WORDSTAT_MAX_CALLS, collectWordstat, checkPositions, pullWebmaster, pullGsc, gaps, summary, coverage, DOMAIN };
+module.exports = { SEEDS, WORDSTAT_RUB_PER_CALL, WORDSTAT_MAX_CALLS, TEST_SOURCE,
+  collectWordstat, clearTestKeywords, answersDemand, checkPositions, pullWebmaster, pullGsc, gaps, summary, coverage, DOMAIN };

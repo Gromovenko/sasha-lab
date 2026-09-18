@@ -119,6 +119,7 @@ ${noindex ? '<meta name="robots" content="noindex,follow">\n' : ''}<link rel="ca
     <a href="/remont-far">Ремонт фар</a>
     <a href="/fara">Полировка</a>
     <a href="/baza/">База знаний</a>
+    <a href="/baza/otvety/">Ответы</a>
   </nav>
   <a class="call" href="tel:${BIZ.tel}">${BIZ.phone}</a>
 </header>
@@ -294,6 +295,76 @@ function relatedBlock(list) {
     `<li><a href="/baza/${RUBRICS[d.meta.rubric].slug}/${d.meta.slug}/">${esc(d.meta.title)}</a></li>`).join('')}</ul></section>`;
 }
 
+// ── раздел «Ответы на поисковые запросы» ───────────────────────────────────
+// Одна страница — один запрос, ответ первым абзацем. Отличие от материалов
+// базы знаний: там разбор темы целиком, здесь короткий прямой ответ и ссылка
+// на разбор. Спрос (Wordstat) решает, какой ответ писать следующим, но НЕ
+// рождает страницу сам — текст пишет человек (см. content/answers.js).
+const answersUrl = (slug) => `/baza/otvety/${slug}/`;
+
+function answerPage(doc, materials, answers) {
+  const { meta, body } = doc;
+  const html = markdown(body);
+  const answerText = plain(html).slice(0, 5000);
+  const url = answersUrl(meta.slug);
+  const target = materials.find((m) => m.meta.slug === meta.material);
+  const desc = meta.description || answerText.slice(0, 180);
+  const near = answers
+    .filter((a) => a.meta.slug !== meta.slug)
+    .map((a) => ({ a, score: (a.meta.rubric === meta.rubric ? 1 : 0)
+      + a.meta.tags.filter((t) => meta.tags.includes(t)).length }))
+    .filter((x) => x.score > 0)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, 5);
+  const jsonld = [{
+    '@context': 'https://schema.org', '@type': 'FAQPage',
+    mainEntity: [{
+      '@type': 'Question', name: meta.title,
+      acceptedAnswer: { '@type': 'Answer', text: answerText },
+    }],
+  }, localBusiness];
+  const bodyHtml = `
+<article class="q answer">
+  <h1>${esc(meta.title)}</h1>
+  <p class="meta">Отвечает мастер студии «Дядя Саша»${meta.updated ? ` · ${esc(meta.updated)}` : ''}</p>
+  <div class="answer">${html}</div>
+  <section class="deeper"><h2>Разобраться глубже</h2>
+    <p><a href="/baza/${RUBRICS[target.meta.rubric].slug}/${target.meta.slug}/">${esc(target.meta.title)}</a>${
+      target.meta.description ? ` — ${esc(target.meta.description)}` : ''}</p></section>
+  ${near.length ? `<section class="related"><h2>Рядом спрашивают</h2><ul>${near.map((x) =>
+    `<li><a href="${answersUrl(x.a.meta.slug)}">${esc(x.a.meta.title)}</a></li>`).join('')}</ul></section>` : ''}
+  ${askLink}
+</article>`;
+  return { url, file: path.join('baza', 'otvety', meta.slug, 'index.html'),
+    html: layout({ url, title: `${meta.title} — студия «Дядя Саша», ${BIZ.city}`, description: desc,
+      breadcrumbs: [{ name: 'Главная', url: '/' }, { name: 'База знаний', url: '/baza/' },
+        { name: 'Ответы на запросы', url: '/baza/otvety/' }, { name: meta.title }],
+      body: bodyHtml, jsonld, updated: meta.updated }) };
+}
+
+function answersIndex(answers) {
+  const url = '/baza/otvety/';
+  const byRubric = {};
+  for (const a of answers) (byRubric[a.meta.rubric] ||= []).push(a);
+  const sections = Object.keys(RUBRICS).filter((k) => byRubric[k]).map((k) => `<section>
+<h2>${esc(RUBRICS[k].title)}</h2>
+<ul class="cards">${byRubric[k].map((a) => `<li><a href="${answersUrl(a.meta.slug)}">${esc(a.meta.title)}</a>
+  ${a.meta.description ? `<span>${esc(a.meta.description)}</span>` : ''}</li>`).join('\n')}</ul></section>`).join('\n');
+  const body = `<h1>Ответы на частые вопросы про фары</h1>
+<p class="lead">Короткие ответы на то, что чаще всего спрашивают про свет: по одному
+вопросу на страницу, ответ первым абзацем, без «оставьте заявку» вместо ответа.
+Сейчас в разделе ${answers.length} ответов.</p>
+${askLink}
+${sections}
+<p class="note">Нужен разбор темы целиком, а не короткий ответ — он в
+<a href="/baza/">базе знаний</a>.</p>`;
+  return { url, file: path.join('baza', 'otvety', 'index.html'),
+    html: layout({ url, title: `Ответы на вопросы про фары и автосвет — студия «Дядя Саша», ${BIZ.city}`,
+      description: 'Прямые ответы мастеров автосвета на частые вопросы: линзы, ремонт, полировка, закон, техосмотр.',
+      breadcrumbs: [{ name: 'Главная', url: '/' }, { name: 'База знаний', url: '/baza/' }, { name: 'Ответы на запросы' }],
+      body, jsonld: [localBusiness] }) };
+}
+
 function rubricIndex(key, docs) {
   const r = RUBRICS[key];
   const url = `/baza/${r.slug}/`;
@@ -309,7 +380,7 @@ ${r.hub ? `<p class="lead">Услуга целиком: <a href="${r.hub}">${esc
       body, jsonld: [localBusiness] }) };
 }
 
-function rootIndex(byRubric, total, cars = []) {
+function rootIndex(byRubric, total, cars = [], answers = []) {
   const sections = Object.keys(RUBRICS).filter((k) => byRubric[k] && byRubric[k].length).map((k) => {
     const r = RUBRICS[k];
     return `<section><h2><a href="/baza/${r.slug}/">${esc(r.title)}</a></h2><ul>${
@@ -320,6 +391,10 @@ function rootIndex(byRubric, total, cars = []) {
 <p class="lead">Вопросы, которые нам задают в мастерской, и честные ответы мастеров.
 Без «оставьте заявку» вместо ответа. ${total} материалов.</p>
 ${askLink}
+${answers.length ? `<section><h2><a href="/baza/otvety/">Ответы на частые вопросы</a></h2>
+<p>Короткий прямой ответ на один вопрос — ${answers.length} штук: ${answers.slice(0, 4).map((a) =>
+  `<a href="${answersUrl(a.meta.slug)}">${esc(a.meta.query)}</a>`).join(', ')}
+и <a href="/baza/otvety/">остальные</a>.</p></section>` : ''}
 ${cars.length ? `<section><h2><a href="/baza/avto/">Свет по машинам</a></h2>
 <p>Что встаёт в фары конкретной модели: ${cars.slice(0, 6).map((v) =>
   `<a href="/baza/avto/${v.slug}/">${esc(capMake(v.make))} ${esc(capMake(v.model))}</a>`).join(', ')}
@@ -456,6 +531,27 @@ async function build() {
   const byRubric = {};
   for (const d of docs) (byRubric[d.meta.rubric] ||= []).push(d);
 
+  // Раздел ответов на поисковые запросы. Две проверки до генерации, обе — про
+  // дубли: ответ обязан ссылаться на существующий разбор, и он не имеет права
+  // отвечать на то же, что уже отвечает материал базы знаний (иначе две наши
+  // страницы конкурируют между собой за один запрос, и обе проигрывают).
+  const answers = require('./answers').load();
+  const mem = require('../seo/lib/memory');
+  const metas = docs.map((d) => d.meta);
+  for (const a of answers) {
+    if (!RUBRICS[a.meta.rubric]) throw new Error(`ответ ${a.meta.slug}: неизвестная рубрика "${a.meta.rubric}"`);
+    if (!docs.some((d) => d.meta.slug === a.meta.material)) {
+      throw new Error(`ответ ${a.meta.slug}: material "${a.meta.material}" — такого материала в базе знаний нет`);
+    }
+    const clash = metas.find((m) => mem.coverage(a.meta.query, m) >= mem.COVERED);
+    if (clash) throw new Error(`ответ ${a.meta.slug}: запрос «${a.meta.query}» уже закрыт материалом «${clash.title}» — дубль`);
+  }
+  const answerSlugs = new Set();
+  for (const a of answers) {
+    if (answerSlugs.has(a.meta.slug)) throw new Error(`дубль адреса: /baza/otvety/${a.meta.slug}/`);
+    answerSlugs.add(a.meta.slug);
+  }
+
   // Машины считаем до сборки индексов: корневая страница базы знаний должна
   // ссылаться на раздел, иначе он живёт только в sitemap и его никто не обходит.
   const cars = await vehicleData();
@@ -463,7 +559,11 @@ async function build() {
   const pages = [];
   for (const d of docs) pages.push(d.meta.type === 'guide' ? guidePage(d, docs) : questionPage(d, docs));
   for (const k of Object.keys(byRubric)) pages.push(rubricIndex(k, byRubric[k]));
-  pages.push(rootIndex(byRubric, docs.length, cars));
+  pages.push(rootIndex(byRubric, docs.length, cars, answers));
+  if (answers.length) {
+    for (const a of answers) pages.push(answerPage(a, docs, answers));
+    pages.push(answersIndex(answers));
+  }
   // Машины: страница появляется только там, где есть факты (см. MIN_FACTS).
   if (cars.length) {
     for (const v of cars) pages.push(vehiclePage(v, docs));
@@ -505,10 +605,18 @@ async function build() {
     `\n</urlset>\n`);
 
   // Карта покрытия: какие поисковые запросы закрыты какой страницей.
-  fs.writeFileSync(path.join(TMP, 'coverage.json'), JSON.stringify(docs.map((d) => ({
-    url: `/baza/${RUBRICS[d.meta.rubric].slug}/${d.meta.slug}/`,
-    title: d.meta.title, rubric: d.meta.rubric, queries: d.meta.queries,
-  })), null, 2));
+  // Карта покрытия видит и раздел ответов: иначе сверка «спрос ↔ покрытие»
+  // предложит писать страницу под запрос, на который ответ уже есть.
+  fs.writeFileSync(path.join(TMP, 'coverage.json'), JSON.stringify([
+    ...docs.map((d) => ({
+      url: `/baza/${RUBRICS[d.meta.rubric].slug}/${d.meta.slug}/`,
+      title: d.meta.title, rubric: d.meta.rubric, queries: d.meta.queries,
+    })),
+    ...answers.map((a) => ({
+      url: answersUrl(a.meta.slug), title: a.meta.title, rubric: a.meta.rubric,
+      kind: 'answer', queries: a.meta.queries,
+    })),
+  ], null, 2));
 
   const OLD = OUT + '.old';
   fs.rmSync(OLD, { recursive: true, force: true });

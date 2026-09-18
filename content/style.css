@@ -118,3 +118,8 @@ table.fit th{color:var(--dim); font-weight:600}
 ul.list{columns:2; column-gap:28px; padding-left:18px}
 ul.list li{break-inside:avoid; margin:4px 0}
 @media (max-width:640px){ ul.list{columns:1} table.fit{font-size:14px} }
+
+/* Раздел ответов на поисковые запросы: короткий ответ + дорога в разбор */
+.deeper{border-top:1px solid var(--line); margin-top:2.2em; padding-top:.6em}
+.deeper h2{font-size:17px; color:var(--dim); font-weight:600; margin-bottom:.4em}
+.deeper p a{font-weight:600}
