@@ -53,6 +53,12 @@ const SOURCES = [
     seeds: ['https://www.criline.ru/'], include: /./, delayMs: 4000, maxPages: 10100 },
   { host: 'steklafar.ru', kind: 'parts', title: 'Стёкла фар',
     seeds: ['https://steklafar.ru/'], include: /./, delayMs: 4000, maxPages: 1500 },
+  { host: 'aozoom-light.ru', kind: 'parts', title: 'AOZOOM Light',
+    // Официальный каталог бренда AOZOOM (линзы для би-led/би-ксенон): ~10,7 тыс.
+    // товаров в трёх файлах sitemap-products-N.xml + 197 страниц/постов
+    // в sitemap-pages.xml. robots.txt (проверено 18.09.2026) разрешает всё,
+    // кроме корзины/сортировок/тегов — сбор ничего из этого не трогает.
+    seeds: ['https://aozoom-light.ru/'], include: /./, delayMs: 4000, maxPages: 11000 },
 
   // ── этап 3: сообщество ───────────────────────────────────────────────────
   // Drive2 ВЫКЛЮЧЕН (09.09.2026): robots.txt отдаёт «User-Agent: * / Disallow: /» —
