@@ -18,29 +18,41 @@ const SOURCES = [
   // ── этап 1: примеры работ ────────────────────────────────────────────────
   { host: 'www.xenonshop.ru', kind: 'works', title: 'Xenonshop',
     seeds: ['https://www.xenonshop.ru/'],
-    include: /\/(blog|stati|articles|nashi-raboty|works|catalog)\//i, delayMs: 4000, maxPages: 250 },
+    // Карта сайта печатает адреса БЕЗ www (xenonshop.ru, не www.xenonshop.ru).
+    // Без sitemapHostFix это расхождение хостов роняло ВСЕ записи карты на этапе
+    // fix() в crawl.js — источник молча полз только обходом по ссылкам (walk),
+    // sitemap.xml по факту не читался ни разу (обнаружено 18.09.2026: «listed=0»).
+    sitemapHostFix: true,
+    include: /\/(blog|stati|articles|nashi-raboty|works|catalog)\//i, delayMs: 4000, maxPages: 3000 },
   { host: 'www.galogenu.net', kind: 'works', title: 'Галогену.нет',
     seeds: ['https://www.galogenu.net/'],
-    include: /\/(blog|stati|articles|works|raboty|catalog)\//i, delayMs: 4000, maxPages: 250 },
+    include: /\/(blog|stati|articles|works|raboty|catalog)\//i, delayMs: 4000, maxPages: 3600 },
   { host: 'autosvet.pro', kind: 'works', title: 'Autosvet.pro',
-    seeds: ['https://autosvet.pro/'], include: /./, delayMs: 4000, maxPages: 250 },
+    seeds: ['https://autosvet.pro/'], include: /./, delayMs: 4000, maxPages: 600 },
   { host: 'hltuning.ru', kind: 'works', title: 'HL Tuning',
     seeds: ['https://hltuning.ru/'],
     // robots этого сайта запрещает /tpost/ и /catalog/ — загрузчик их и не возьмёт,
     // здесь фильтр только сужает область до осмысленного.
-    include: /./, delayMs: 4000, maxPages: 150 },
+    include: /./, delayMs: 4000, maxPages: 1000 },
 
   // ── этап 2: комплектующие ────────────────────────────────────────────────
   { host: 'luxsar.ru', kind: 'parts', title: 'Luxsar',
-    seeds: ['https://luxsar.ru/'], include: /./, delayMs: 4000, maxPages: 400 },
+    seeds: ['https://luxsar.ru/'], include: /./, delayMs: 4000, maxPages: 7500 },
   { host: 'legal-xenon.ru', kind: 'parts', title: 'Legal Xenon',
-    seeds: ['https://legal-xenon.ru/'], include: /./, delayMs: 4000, maxPages: 400 },
+    seeds: ['https://legal-xenon.ru/'], include: /./, delayMs: 4000, maxPages: 3600 },
   { host: 'vdf-light.ru', kind: 'parts', title: 'VDF Light',
-    seeds: ['https://vdf-light.ru/'], include: /./, delayMs: 4000, maxPages: 400 },
+    seeds: ['https://vdf-light.ru/'], include: /./,
+    // Заход 18.09 на 400 стр. упёрся в 429 (Too Many Requests) на /catalog/ —
+    // проверено вручную curl'ом: root «/» отдаёт 200, а /catalog/* стабильно 429
+    // ещё 2,5 ч после захода. Это не таймаут и не наш баг, а лимитер площадки
+    // именно на раздел каталога. delayMs поднят с 4000 до 10000, чтобы следующий
+    // заход не пробивал его снова; сам заход стоит начинать не раньше, чем
+    // /catalog/acura перестанет отдавать 429 (см. sasha-lab-harvest-vdf-ratelimit.md).
+    delayMs: 10000, maxPages: 8600 },
   { host: 'www.criline.ru', kind: 'parts', title: 'Criline',
-    seeds: ['https://www.criline.ru/'], include: /./, delayMs: 4000, maxPages: 300 },
+    seeds: ['https://www.criline.ru/'], include: /./, delayMs: 4000, maxPages: 10100 },
   { host: 'steklafar.ru', kind: 'parts', title: 'Стёкла фар',
-    seeds: ['https://steklafar.ru/'], include: /./, delayMs: 4000, maxPages: 300 },
+    seeds: ['https://steklafar.ru/'], include: /./, delayMs: 4000, maxPages: 1500 },
 
   // ── этап 3: сообщество ───────────────────────────────────────────────────
   // Drive2 ВЫКЛЮЧЕН (09.09.2026): robots.txt отдаёт «User-Agent: * / Disallow: /» —
