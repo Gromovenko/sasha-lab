@@ -14,6 +14,12 @@
 // и дубль в индексе, который поисковик засчитает не нам.
 const { BROWSER_UA } = require('./http');
 
+// Паузы delayMs ниже — не «на глаз», а замер 19.09.2026 с сервера проекта
+// (`node harvest/run.js probe`, лесенка 4000 → 300 мс на каждом источнике).
+// Почти везде получилось 1000 мс — пол вежливости, ниже которого замер не
+// опускается ни при каком результате, хотя сами площадки держали и 300 мс.
+// Три исключения названы самими площадками в robots.txt: bi-vision.ru
+// Crawl-delay 40, nts-auto.com — 20, hidplanet.com — 10 секунд.
 const SOURCES = [
   // ── этап 1: примеры работ ────────────────────────────────────────────────
   { host: 'www.xenonshop.ru', kind: 'works', title: 'Xenonshop',
@@ -23,48 +29,52 @@ const SOURCES = [
     // fix() в crawl.js — источник молча полз только обходом по ссылкам (walk),
     // sitemap.xml по факту не читался ни разу (обнаружено 18.09.2026: «listed=0»).
     sitemapHostFix: true,
-    include: /\/(blog|stati|articles|nashi-raboty|works|catalog)\//i, delayMs: 4000, maxPages: 3000 },
+    include: /\/(blog|stati|articles|nashi-raboty|works|catalog)\//i, delayMs: 1000, maxPages: 3000 },
   { host: 'www.galogenu.net', kind: 'works', title: 'Галогену.нет',
     seeds: ['https://www.galogenu.net/'],
-    include: /\/(blog|stati|articles|works|raboty|catalog)\//i, delayMs: 4000, maxPages: 3600 },
+    include: /\/(blog|stati|articles|works|raboty|catalog)\//i, delayMs: 1000, maxPages: 3600 },
   { host: 'autosvet.pro', kind: 'works', title: 'Autosvet.pro',
-    seeds: ['https://autosvet.pro/'], include: /./, delayMs: 4000, maxPages: 600 },
+    seeds: ['https://autosvet.pro/'], include: /./, delayMs: 1000, maxPages: 600 },
   { host: 'hltuning.ru', kind: 'works', title: 'HL Tuning',
     seeds: ['https://hltuning.ru/'],
     // robots этого сайта запрещает /tpost/ и /catalog/ — загрузчик их и не возьмёт,
     // здесь фильтр только сужает область до осмысленного.
-    include: /./, delayMs: 4000, maxPages: 1000 },
+    include: /./, delayMs: 1000, maxPages: 1000 },
 
   // ── этап 2: комплектующие ────────────────────────────────────────────────
   { host: 'luxsar.ru', kind: 'parts', title: 'Luxsar',
-    seeds: ['https://luxsar.ru/'], include: /./, delayMs: 4000, maxPages: 7500 },
+    seeds: ['https://luxsar.ru/'], include: /./, delayMs: 1000, maxPages: 7500 },
   { host: 'legal-xenon.ru', kind: 'parts', title: 'Legal Xenon',
-    seeds: ['https://legal-xenon.ru/'], include: /./, delayMs: 4000, maxPages: 3600 },
+    seeds: ['https://legal-xenon.ru/'], include: /./, delayMs: 1000, maxPages: 3600 },
   { host: 'vdf-light.ru', kind: 'parts', title: 'VDF Light',
     seeds: ['https://vdf-light.ru/'], include: /./,
     // Заход 18.09 на 400 стр. упёрся в 429 (Too Many Requests) на /catalog/ —
     // проверено вручную curl'ом: root «/» отдаёт 200, а /catalog/* стабильно 429
     // ещё 2,5 ч после захода. Это не таймаут и не наш баг, а лимитер площадки
-    // именно на раздел каталога. delayMs поднят с 4000 до 10000, чтобы следующий
-    // заход не пробивал его снова; сам заход стоит начинать не раньше, чем
-    // /catalog/acura перестанет отдавать 429 (см. sasha-lab-harvest-vdf-ratelimit.md).
-    delayMs: 10000, maxPages: 8600 },
+    // именно на раздел каталога. 19.09.2026 замер (harvest/probe.js) прошёл всю
+    // лесенку до 300 мс без единого 429 — лимитер накопительный, мгновенную
+    // нагрузку он не видит. Поэтому пауза здесь 1000 мс, как у всех, а защитой
+    // работает штраф в загрузчике: первый же 429 удваивает паузу до конца захода
+    // (см. sasha-lab-harvest-vdf-ratelimit.md и harvest/http.js).
+    delayMs: 1000, maxPages: 8600 },
   { host: 'www.criline.ru', kind: 'parts', title: 'Criline',
-    seeds: ['https://www.criline.ru/'], include: /./, delayMs: 4000, maxPages: 10100 },
+    seeds: ['https://www.criline.ru/'], include: /./, delayMs: 1000, maxPages: 10100 },
   { host: 'steklafar.ru', kind: 'parts', title: 'Стёкла фар',
-    seeds: ['https://steklafar.ru/'], include: /./, delayMs: 4000, maxPages: 1500 },
+    seeds: ['https://steklafar.ru/'], include: /./, delayMs: 1000, maxPages: 1500 },
   { host: 'aozoom-light.ru', kind: 'parts', title: 'AOZOOM Light',
     // Официальный каталог бренда AOZOOM (линзы для би-led/би-ксенон): ~10,7 тыс.
     // товаров в трёх файлах sitemap-products-N.xml + 197 страниц/постов
     // в sitemap-pages.xml. robots.txt (проверено 18.09.2026) разрешает всё,
     // кроме корзины/сортировок/тегов — сбор ничего из этого не трогает.
-    seeds: ['https://aozoom-light.ru/'], include: /./, delayMs: 4000, maxPages: 11000 },
+    seeds: ['https://aozoom-light.ru/'], include: /./, delayMs: 1000, maxPages: 11000 },
   { host: 'nts-auto.com', kind: 'parts', title: 'NTS-Auto',
-    seeds: ['https://nts-auto.com/'], include: /./, delayMs: 4000, maxPages: 3100 },
+    // Crawl-delay: 20 в robots.txt (замер 19.09.2026) — лесенку пауз здесь даже
+    // не запускаем, площадка сама назвала свою цену. Полный заход ~17 часов.
+    seeds: ['https://nts-auto.com/'], include: /./, delayMs: 20000, maxPages: 3100 },
   { host: 'mtflight-shop.com', kind: 'parts', title: 'MTFlight Shop',
-    seeds: ['https://mtflight-shop.com/'], include: /./, delayMs: 4000, maxPages: 1400 },
+    seeds: ['https://mtflight-shop.com/'], include: /./, delayMs: 1000, maxPages: 1400 },
   { host: 'tuningfar.com', kind: 'parts', title: 'TuningFar',
-    seeds: ['https://tuningfar.com/'], include: /./, delayMs: 4000, maxPages: 3700 },
+    seeds: ['https://tuningfar.com/'], include: /./, delayMs: 1000, maxPages: 3700 },
   { host: 'bi-vision.ru', kind: 'parts', title: 'Bi-Vision',
     // robots.txt площадки прямо задаёт Crawl-delay: 40 — разбор robots режет это
     // поле потолком в 30 с, поэтому настоящее значение продублировано здесь:
@@ -81,20 +91,20 @@ const SOURCES = [
     // 4,8 тыс. адресов из карты — это не баг, загрузчик просто уважает запрет площадки.
     seeds: ['https://dixel.store/'],
     sitemaps: ['https://dixel.store/index.php?route=feed/google_sitemap'],
-    include: /./, delayMs: 4000, maxPages: 4800 },
+    include: /./, delayMs: 1000, maxPages: 4800 },
   { host: 'statlight.ru', kind: 'parts', title: 'Statlight',
-    seeds: ['https://statlight.ru/'], include: /./, delayMs: 4000, maxPages: 2650 },
+    seeds: ['https://statlight.ru/'], include: /./, delayMs: 1000, maxPages: 2650 },
   { host: 'optima-light.ru', kind: 'parts', title: 'Optima-Light',
-    seeds: ['https://optima-light.ru/'], include: /./, delayMs: 4000, maxPages: 3450 },
+    seeds: ['https://optima-light.ru/'], include: /./, delayMs: 1000, maxPages: 3450 },
   { host: 'electro-kot.ru', kind: 'parts', title: 'Electro-Kot',
     // Самый крупный источник из новой партии — ~30 тыс. адресов в карте, но не
     // «всякая автоэлектрика»: основная масса — это готовые страницы вида
     // «<марка+модель+год> — <ближний/дальний свет | повороты | птф>», то есть
     // уже сама структура сайта — данные о посадке ламп/линз по моделям, ровно
-    // то, что нужно для /baza/avto/. Полный обход при delayMs 4000 займёт
-    // ориентировочно ~33 часа — оценка занесена сюда, чтобы не удивляться
-    // длительности захода.
-    seeds: ['https://electro-kot.ru/'], include: /./, delayMs: 4000, maxPages: 30000 },
+    // то, что нужно для /baza/avto/. Полный обход при прежних 4000 мс занимал бы
+    // ~33 часа; по замеру 19.09.2026 источник отвечает за 340 мс и спокойно
+    // держит запрос в секунду — те же 30 тысяч адресов это ~11 часов.
+    seeds: ['https://electro-kot.ru/'], include: /./, delayMs: 1000, maxPages: 30000 },
 
   // ── этап 3: сообщество ───────────────────────────────────────────────────
   // Drive2 ВЫКЛЮЧЕН (09.09.2026): robots.txt отдаёт «User-Agent: * / Disallow: /» —

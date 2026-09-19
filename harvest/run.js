@@ -119,9 +119,13 @@ async function main() {
       for (const p of plan) {
         console.log(`    ${p.host.padEnd(20)} пауза ${String(p.recommend).padStart(5)} мс, `
           + `в базе ${String(p.docs).padStart(5)} из ${String(p.maxPages).padStart(5)}, `
-          + `осталось ${String(p.left).padStart(5)} → ${p.etaHours} ч`);
+          + `осталось до потолка ${String(p.left).padStart(5)} → ≤ ${p.etaHours} ч`);
       }
-      console.log(`\n  итого заход: ${Math.round(plan.reduce((a, b) => a + b.etaHours, 0) * 10) / 10} ч`);
+      // Оценка ВЕРХНЯЯ: «осталось» считается до потолка maxPages, а карта сайта
+      // у источника может кончиться раньше (autosvet.pro и hltuning.ru добраны
+      // полностью — заход по ним занимает секунды, хотя до потолка «осталось»
+      // под сотню страниц).
+      console.log(`\n  итого заход: не больше ${Math.round(plan.reduce((a, b) => a + b.etaHours, 0) * 10) / 10} ч`);
       console.log(`  план записан: ${file}`);
       console.log(`  порядок для очереди:\n    ${merged.filter((p) => p.left > 0).map((p) => p.host).join(' ')}`);
       break;

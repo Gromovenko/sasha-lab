@@ -34,7 +34,10 @@ const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.fl
 
 // Адреса для замера: из карты сайта, вразбивку (не первые подряд — они часто
 // лежат в одном разделе и кэшированы у источника лучше остальных).
-async function sampleUrls(src, want = PER_STEP) {
+// Адресов берём с запасом (втрое больше, чем нужно замеру): карты сайта полны
+// мёртвых адресов — у mtflight-shop.com из четырёх взятых вразбивку 404 отдали
+// три, и замер сдавался, не сняв ни одной цифры.
+async function sampleUrls(src, want = PER_STEP * 3) {
   let entries = [];
   try {
     entries = await crawl.sitemapUrls(src.host, {
@@ -75,32 +78,26 @@ async function probeSource(src) {
   res.sampled = urls.length;
   if (!urls.length) { res.note = 'нет адресов для замера (пустая карта сайта и нет сидов)'; res.recommend = src.delayMs; return res; }
 
-  let base = 0, lastGood = 0;
+  let base = 0, lastGood = 0, step_dead = 0;
   for (const delay of STEPS) {
     if (res.robotsDelay && delay < res.robotsDelay) break;   // быстрее разрешённого не меряем
     const times = [];
     let bad = null;
     let gone = 0;
-    // Адреса берутся из карты сайта, а карты врут: у mtflight-shop.com первый же
-    // адрес из карты отдал 404, и лесенка останавливалась на самой медленной
-    // ступени — источник получал «он не держит даже 4 секунды» вместо замера.
-    // 404/410 — это протухшая запись карты, а не отказ обслуживать: берём
-    // следующий адрес. Отказ обслуживать — это 429/403/503 и таймаут.
-    for (let i = 0; i < PER_STEP + gone; i += 1) {
-      const r = await timedGet(urls[(i) % urls.length], src.ua);
-      if (r.status === 404 || r.status === 410) {
-        gone += 1;
-        if (gone >= urls.length) { bad = 'все адреса замера отдали 404 — карта сайта протухла'; break; }
-        await sleep(delay);
-        continue;
-      }
+    // 404/410 — это протухшая запись карты сайта, а не отказ обслуживать:
+    // пропускаем адрес и берём следующий из запаса. Отказ обслуживать — это
+    // 429/403/503 и таймаут, вот на них лесенка и останавливается.
+    for (let i = 0; i < urls.length && times.length < PER_STEP; i += 1) {
+      const r = await timedGet(urls[i], src.ua);
+      if (r.status === 404 || r.status === 410) { gone += 1; await sleep(delay); continue; }
       if (r.status !== 200) { bad = r.status || `ошибка: ${r.error}`; break; }
       times.push(r.ms);
-      if (times.length >= PER_STEP) break;
       await sleep(delay);
     }
+    if (!bad && !times.length) bad = `все ${gone} адресов замера отдали 404 — карта сайта протухла`;
+    if (gone) step_dead = gone;
     const med = median(times);
-    const step = { delay, ok: !bad, med, bad };
+    const step = { delay, ok: !bad, med, bad, dead: step_dead || undefined };
     res.steps.push(step);
     if (bad) break;
     if (!base) base = med;
