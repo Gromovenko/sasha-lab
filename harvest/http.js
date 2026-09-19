@@ -24,6 +24,14 @@ const UA = process.env.HARVEST_UA ||
 const CACHE = process.env.HARVEST_CACHE || path.join(__dirname, '..', '.harvest-cache');
 const lastHit = new Map();     // host → timestamp последнего запроса
 const robotsCache = new Map(); // host → { rules, fetchedAt }
+// Штраф за 429/503: пауза, которую источник ВЫПРОСИЛ сам, поверх заданной.
+// Нужен потому, что замер скорости (harvest/probe.js) видит мгновенную
+// нагрузку, а лимитер площадки часто накопительный: vdf-light.ru 18.09.2026
+// отдавал 200 сотню страниц подряд и только потом закрыл весь /catalog/ на
+// 429 — и держал его ещё 2,5 часа. Один такой ответ = удваиваем паузу этому
+// хосту до конца захода, два подряд = ещё вдвое, потолок минута.
+const penalty = new Map();     // host → добавочная пауза, мс
+const PENALTY_MAX = 60000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cachePath = (url) =>
@@ -40,7 +48,11 @@ function raw(url, { redirects = 5, timeout = 20000, ua = UA, maxBytes = 4 * 1024
     const u = new URL(url);
     const mod = u.protocol === 'http:' ? http : https;
     const req = mod.request({
-      host: u.hostname, path: u.pathname + u.search, method: 'GET',
+      // Порт из адреса обязателен: без него node молча берёт 80/443, и запрос
+      // к «http://127.0.0.1:41234/» уходит на чужой сервер, отвечающий по 80.
+      // Живым источникам это не мешало (все они на 443), а тест загрузчика
+      // поднимает свой сервер на случайном порту — и ловил чужой ответ.
+      host: u.hostname, port: u.port || undefined, path: u.pathname + u.search, method: 'GET',
       headers: {
         'User-Agent': ua,
         'Accept': 'text/html,application/xhtml+xml',
@@ -73,7 +85,7 @@ function raw(url, { redirects = 5, timeout = 20000, ua = UA, maxBytes = 4 * 1024
           else if (enc.includes('gzip')) buf = zlib.gunzipSync(buf);
           else if (enc.includes('deflate')) buf = zlib.inflateSync(buf);
         } catch { /* пришло без сжатия вопреки заголовку */ }
-        resolve({ status: code, body: buf.toString('utf8'), type: String(res.headers['content-type'] || '') });
+        resolve({ status: code, body: buf.toString('utf8'), type: String(res.headers['content-type'] || ''), headers: res.headers });
       });
     });
     req.on('timeout', () => req.destroy(new Error('таймаут')));
@@ -155,11 +167,25 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   // проверяем путь вместе с ней.
   if (!allowedBy(rules, u.pathname + u.search)) return { url, status: 0, body: '', skipped: 'robots' };
 
-  const wait = Math.max(delayMs, rules.delay) - (Date.now() - (lastHit.get(u.hostname) || 0));
+  const pause = Math.max(delayMs, rules.delay, penalty.get(u.hostname) || 0);
+  const wait = pause - (Date.now() - (lastHit.get(u.hostname) || 0));
   if (wait > 0) await sleep(wait);
   lastHit.set(u.hostname, Date.now());
 
   const r = await raw(url, { ua, maxBytes });
+  // «Слишком часто» / «мне сейчас тяжело» — единственный ответ источника, который
+  // мы обязаны не просто записать в ошибки, а исполнить: дальше ходим реже.
+  if (r.status === 429 || r.status === 503) {
+    const next = Math.min(PENALTY_MAX, Math.max(pause * 2, (penalty.get(u.hostname) || 0) * 2));
+    if (next > (penalty.get(u.hostname) || 0)) {
+      penalty.set(u.hostname, next);
+      console.warn(`  ⚠ ${u.hostname} ответил ${r.status} — пауза поднята до ${next} мс до конца захода`);
+    }
+    // Retry-After площадка присылает не всегда, но если прислала — слушаемся её,
+    // а не своей арифметики.
+    const ra = Number(String(r.headers?.['retry-after'] || '').trim());
+    if (ra > 0) await sleep(Math.min(PENALTY_MAX * 5, ra * 1000));
+  }
   if (r.status === 200 && /html|text/.test(r.type)) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, r.body);
@@ -167,4 +193,4 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   return { url, status: r.status, body: r.body, type: r.type, fromCache: false };
 }
 
-module.exports = { get, raw, robots, allowedBy, parseRobots, UA, BROWSER_UA, CACHE };
+module.exports = { get, raw, robots, allowedBy, parseRobots, UA, BROWSER_UA, CACHE, penalty };

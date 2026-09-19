@@ -7,8 +7,17 @@
 # ТОЛЬКО через эту очередь.
 #
 #   scripts/harvest-queue.sh host1 host2 ...       # полный сбор перечисленных хостов
+#   scripts/harvest-queue.sh --plan                # порядок из замера скорости (см. ниже)
 #   HARVEST_LIMIT=60 scripts/harvest-queue.sh ...  # ограничить страницы за заход
 #   HARVEST_PAR=2 ...                              # параллельность (по умолчанию 1, потолок 2)
+#
+# `--plan` берёт хосты из seo/data/harvest-speed.json — файла, который пишет
+# `node harvest/run.js probe`: там для каждого источника измеренная безопасная
+# пауза и оценка, сколько часов займёт его заход. Порядок в плане — по
+# возрастанию времени: сначала быстрые и почти добранные источники, самые
+# долгие в конце. Смысл ровно один: заход идёт сутками, и польза должна
+# появляться в первые часы, а не в последние. План старше недели не берём —
+# скорость чужого сайта меняется, пере-замерить дешевле, чем давить вслепую.
 #
 # Правила: не больше HARVEST_PAR процессов; перед КАЖДЫМ запуском ждём, пока
 # свободной памяти станет >= MIN_FREE_MB; каждый процесс под nice/ionice и с
@@ -18,12 +27,26 @@ cd /opt/sasha-lab 2>/dev/null || cd "$(dirname "$0")/.." || exit 1
 
 PAR="${HARVEST_PAR:-1}"; [ "$PAR" -gt 2 ] && PAR=2
 MIN_FREE_MB="${HARVEST_MIN_FREE_MB:-1500}"   # ниже этого новый сбор не стартует
-HEAP_MB="${HARVEST_HEAP_MB:-512}"            # потолок кучи одного сборщика
+# 512 МБ не хватало на источники с большой картой сайта (legal-xenon, steklafar,
+# mtflight-shop, statlight, nts-auto падали по heap ещё 18.09) — потолок поднят
+# до 1024. При PAR=1 это безопасно даже на 3,8 ГБ нового сервера.
+HEAP_MB="${HARVEST_HEAP_MB:-1024}"           # потолок кучи одного сборщика
 LIMIT="${HARVEST_LIMIT:-}"
 LOGDIR="${HARVEST_LOGDIR:-/var/log/sashalab-harvest}"
 mkdir -p "$LOGDIR"
 
-[ $# -gt 0 ] || { echo "укажите хосты: $0 host1 [host2 ...]"; exit 2; }
+if [ "${1:-}" = "--plan" ]; then
+  PLAN="${HARVEST_PLAN:-seo/data/harvest-speed.json}"
+  [ -f "$PLAN" ] || { echo "нет плана $PLAN — сначала: node harvest/run.js probe"; exit 2; }
+  AGE_DAYS=$(( ( $(date +%s) - $(stat -c %Y "$PLAN") ) / 86400 ))
+  [ "$AGE_DAYS" -le 7 ] || echo "  ⚠ план снят $AGE_DAYS дней назад — стоит пере-замерить (run.js probe)"
+  # shellcheck disable=SC2046
+  set -- $(node -e 'const p=require("./"+process.argv[1]);process.stdout.write(p.plan.filter(x=>x.left>0).map(x=>x.host).join(" "))' "$PLAN")
+  [ $# -gt 0 ] || { echo "в плане нет источников с недобранными страницами — сбор не нужен"; exit 0; }
+  echo "  план из $PLAN: $*"
+fi
+
+[ $# -gt 0 ] || { echo "укажите хосты: $0 host1 [host2 ...] | $0 --plan"; exit 2; }
 
 free_mb() { awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo; }
 

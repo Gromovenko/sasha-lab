@@ -8,6 +8,7 @@
 //   node harvest/run.js crawl <хост>            — один источник
 //   node harvest/run.js tg <канал> [--pages 10] — телеграм: публичное превью
 //   node harvest/run.js tg-import <result.json> [--channel имя]
+//   node harvest/run.js probe [--hosts a,b]     — замер безопасной скорости источников
 //   node harvest/run.js facts [--limit 500]     — разбор скачанного в факты
 //   node harvest/run.js stats                   — что накоплено
 //
@@ -18,6 +19,7 @@ require('../server-env')(path.join(__dirname, '..', 'seo', '.env'));
 
 const { SOURCES, byHost, byKind } = require('./sources');
 const crawl = require('./crawl');
+const probe = require('./probe');
 const facts = require('./facts');
 const store = require('./store');
 const tg = require('./telegram');
@@ -31,6 +33,7 @@ sasha-lab · сбор базы знаний
   crawl works|parts|community|<хост> [--limit N] [--refetch]
   tg <канал> [--pages 10]    телеграм: публичное превью t.me/s/
   tg-import <result.json> [--channel имя]
+  probe [--hosts a,b]        замер безопасной скорости каждого источника + план очереди
   facts [--limit 500]        разбор скачанного в машины/комплектующие/совместимость
   facts --reparse            пересчитать черновые факты с нуля (после правки правил)
   stats                      что накоплено
@@ -77,6 +80,41 @@ async function main() {
     case 'tg-import': {
       const st = await tg.fromExport(argv[1], { channel: flag('channel') });
       console.log(`  @${st.channel}: сообщений ${st.messages}, сохранено ${st.saved}, коротких ${st.short}`);
+      break;
+    }
+    // Замер скорости: сколько источник реально выдерживает. Результат ложится
+    // в seo/data/harvest-speed.json — оттуда же очередь сбора берёт ПОРЯДОК
+    // хостов (сначала быстрые и почти готовые, самые долгие в конце), чтобы
+    // польза от захода появлялась в первые часы, а не через сутки.
+    case 'probe': {
+      const hosts = String(flag('hosts', '')).split(',').map((x) => x.trim()).filter(Boolean);
+      const res = await probe.run({ hosts });
+      const have = db.enabled
+        ? await db.q('SELECT s.host, count(d.id)::int AS docs FROM sources s'
+          + ' LEFT JOIN documents d ON d.source_id = s.id GROUP BY 1')
+        : [];
+      const docsOf = Object.fromEntries(have.map((r) => [r.host, r.docs]));
+      const plan = res.map((r) => {
+        const src = byHost(r.host) || {};
+        const cap = src.maxPages || 0;
+        // Режим заголовков чужой сервер не листает: одна карта сайта за заход,
+        // дальше считаем у себя — время такого источника от паузы не зависит.
+        const left = src.mode === 'titles' ? 0 : Math.max(0, cap - (docsOf[r.host] || 0));
+        return { ...r, docs: docsOf[r.host] || 0, maxPages: cap, left,
+          etaHours: Math.round((left * r.perPageMs) / 3600000 * 10) / 10 };
+      }).sort((a, b) => a.etaHours - b.etaHours);
+      const file = path.join(__dirname, '..', 'seo', 'data', 'harvest-speed.json');
+      require('fs').mkdirSync(path.dirname(file), { recursive: true });
+      require('fs').writeFileSync(file, JSON.stringify({ measuredAt: new Date().toISOString(), plan }, null, 2));
+      console.log('\n  порядок очереди (по времени захода, самые долгие в конце):');
+      for (const p of plan) {
+        console.log(`    ${p.host.padEnd(20)} пауза ${String(p.recommend).padStart(5)} мс, `
+          + `в базе ${String(p.docs).padStart(5)} из ${String(p.maxPages).padStart(5)}, `
+          + `осталось ${String(p.left).padStart(5)} → ${p.etaHours} ч`);
+      }
+      console.log(`\n  итого заход: ${Math.round(plan.reduce((a, b) => a + b.etaHours, 0) * 10) / 10} ч`);
+      console.log(`  план записан: ${file}`);
+      console.log(`  порядок для очереди:\n    ${plan.filter((p) => p.left > 0).map((p) => p.host).join(' ')}`);
       break;
     }
     case 'facts': {

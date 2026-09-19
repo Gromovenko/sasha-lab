@@ -187,3 +187,50 @@ test('завод. конструктив фары: герметик, адапт�
   assert.equal(f.low_beam_source, 'штатный ксенон');
   assert.equal(f.factory_lens, 'Koito');
 });
+
+// ── скорость сбора: замер и штраф за 429 ───────────────────────────────────
+// Сторожат две вещи, которые ломаются молча и дорого: рекомендация паузы
+// (ошибка вниз = бан на источнике, ошибка вверх = лишние сутки захода) и
+// исполнение отказа «слишком часто» — без него измеренная быстрая пауза
+// превращает накопительный лимитер площадки в стену из 429.
+const probe = require('../harvest/probe');
+
+test('probe: пауза не быстрее 1 запроса в секунду и не быстрее Crawl-delay', () => {
+  // Сайт выдержал 300 мс — всё равно не разгоняемся быстрее секунды.
+  assert.equal(probe.recommend({ lastGood: 300 }), 1000);
+  // Запас 1.5 к последней прошедшей ступени.
+  assert.equal(probe.recommend({ lastGood: 4000 }), 6000);
+  // Лесенка не запускалась (Crawl-delay медленнее любой ступени) — берём его.
+  assert.equal(probe.recommend({ robotsDelay: 10000, now: 10000 }), 10000);
+  assert.equal(probe.recommend({ robotsDelay: 40000, now: 40000 }), 40000);
+  // Первая же ступень отказала — отходим от неё вдвое.
+  assert.equal(probe.recommend({ steps: [{ delay: 4000, ok: false, bad: 429 }], now: 4000 }), 8000);
+  // Потолок: медленнее 40 с не ходим никуда.
+  assert.equal(probe.recommend({ robotsDelay: 30000, lastGood: 0, steps: [{ delay: 30000 }] }), 40000);
+});
+
+test('загрузчик: 429 поднимает паузу этому хосту до конца захода', async () => {
+  const nodeHttp = require('node:http');
+  const codes = [429, 200];
+  const srv = nodeHttp.createServer((req, res) => {
+    res.writeHead(codes.shift() || 200, { 'content-type': 'text/html' });
+    res.end('<html>ок</html>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    http.penalty.delete('127.0.0.1');
+    const t0 = Date.now();
+    const first = await http.get(`${base}/a`, { delayMs: 100, useCache: false });
+    assert.equal(first.status, 429);
+    assert.equal(http.penalty.get('127.0.0.1'), 200, 'пауза удвоена самим источником');
+    const second = await http.get(`${base}/b`, { delayMs: 100, useCache: false });
+    assert.equal(second.status, 200);
+    // Вторая ходка ждала уже поднятую паузу, а не исходные 100 мс.
+    assert.ok(Date.now() - t0 >= 200, 'штраф не исполнен');
+  } finally {
+    http.penalty.delete('127.0.0.1');
+    srv.close();
+  }
+});

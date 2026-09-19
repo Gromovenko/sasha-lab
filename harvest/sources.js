@@ -66,9 +66,12 @@ const SOURCES = [
   { host: 'tuningfar.com', kind: 'parts', title: 'TuningFar',
     seeds: ['https://tuningfar.com/'], include: /./, delayMs: 4000, maxPages: 3700 },
   { host: 'bi-vision.ru', kind: 'parts', title: 'Bi-Vision',
-    // robots.txt площадки прямо задаёт Crawl-delay: 40 — наш загрузчик это поле
-    // сам не читает, поэтому delayMs выставлен руками под него (проверено 18.09.2026).
-    seeds: ['https://bi-vision.ru/'], include: /./, delayMs: 40000, maxPages: 3300 },
+    // robots.txt площадки прямо задаёт Crawl-delay: 40 — разбор robots режет это
+    // поле потолком в 30 с, поэтому настоящее значение продублировано здесь:
+    // delayMs для сбора и robotsDelayHint для замера скорости (harvest/probe.js),
+    // чтобы замер не «разогнал» источник до разрешённых загрузчиком 30 с.
+    seeds: ['https://bi-vision.ru/'], include: /./, delayMs: 40000,
+    robotsDelayHint: 40000, maxPages: 3300 },
   { host: 'dixel.store', kind: 'parts', title: 'Dixel',
     // Обычный /sitemap.xml и /sitemap_index.xml пустые — реальная карта у площадки
     // отдаётся по параметрическому адресу из robots.txt (route=feed/google_sitemap).
