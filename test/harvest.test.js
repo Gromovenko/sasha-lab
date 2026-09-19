@@ -234,3 +234,26 @@ test('загрузчик: 429 поднимает паузу этому хост�
     srv.close();
   }
 });
+
+test('план скорости: свежий перекрывает реестр, старый и слишком быстрый — нет', () => {
+  const fs = require('fs');
+  const { applySpeedPlan } = require('../harvest/sources');
+  const file = path.join(os.tmpdir(), 'sashalab-speed-plan.json');
+  const list = () => ([{ host: 'a.ru', delayMs: 4000 }, { host: 'b.ru', delayMs: 4000 },
+    { host: 'c.ru', delayMs: 40000 }]);
+
+  fs.writeFileSync(file, JSON.stringify({ measuredAt: new Date().toISOString(),
+    plan: [{ host: 'a.ru', recommend: 1000 }, { host: 'b.ru', recommend: 200 }] }));
+  const fresh = applySpeedPlan(list(), file);
+  assert.equal(fresh[0].delayMs, 1000, 'измеренная пауза применена');
+  assert.equal(fresh[1].delayMs, 4000, 'быстрее секунды не принимаем ни при каком замере');
+  assert.equal(fresh[2].delayMs, 40000, 'источника нет в плане — остаётся как в реестре');
+
+  const old = new Date(Date.now() - 40 * 86400000).toISOString();
+  fs.writeFileSync(file, JSON.stringify({ measuredAt: old, plan: [{ host: 'a.ru', recommend: 1000 }] }));
+  assert.equal(applySpeedPlan(list(), file)[0].delayMs, 4000, 'замер старше 30 дней не берём');
+
+  fs.writeFileSync(file, 'это не json');
+  assert.equal(applySpeedPlan(list(), file)[0].delayMs, 4000, 'битый план не роняет сбор');
+  fs.unlinkSync(file);
+});

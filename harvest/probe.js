@@ -80,11 +80,24 @@ async function probeSource(src) {
     if (res.robotsDelay && delay < res.robotsDelay) break;   // быстрее разрешённого не меряем
     const times = [];
     let bad = null;
-    for (let i = 0; i < PER_STEP; i += 1) {
-      const r = await timedGet(urls[i % urls.length], src.ua);
+    let gone = 0;
+    // Адреса берутся из карты сайта, а карты врут: у mtflight-shop.com первый же
+    // адрес из карты отдал 404, и лесенка останавливалась на самой медленной
+    // ступени — источник получал «он не держит даже 4 секунды» вместо замера.
+    // 404/410 — это протухшая запись карты, а не отказ обслуживать: берём
+    // следующий адрес. Отказ обслуживать — это 429/403/503 и таймаут.
+    for (let i = 0; i < PER_STEP + gone; i += 1) {
+      const r = await timedGet(urls[(i) % urls.length], src.ua);
+      if (r.status === 404 || r.status === 410) {
+        gone += 1;
+        if (gone >= urls.length) { bad = 'все адреса замера отдали 404 — карта сайта протухла'; break; }
+        await sleep(delay);
+        continue;
+      }
       if (r.status !== 200) { bad = r.status || `ошибка: ${r.error}`; break; }
       times.push(r.ms);
-      if (i < PER_STEP - 1) await sleep(delay);
+      if (times.length >= PER_STEP) break;
+      await sleep(delay);
     }
     const med = median(times);
     const step = { delay, ok: !bad, med, bad };

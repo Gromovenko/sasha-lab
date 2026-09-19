@@ -151,7 +151,41 @@ const SOURCES = [
     note: 'html под Cloudflare (403 всем, проверено 17.09.2026) — берём только заголовки тем из карты сайта' },
 ];
 
+// ── измеренная пауза перекрывает записанную ────────────────────────────────
+// Числа delayMs выше — это то, с чего источник начинает жизнь в реестре:
+// осторожная оценка руками. Настоящее значение даёт замер
+// (`node harvest/run.js probe` → seo/data/harvest-speed.json): он ходит к
+// источнику лесенкой пауз и смотрит, где тот начинает отказывать. Если замер
+// есть и он свежий — работаем по нему, иначе по записанному здесь.
+//
+// Три предохранителя, без которых такой перехват опасен:
+//   * замер старше 30 дней не берём — чужой сайт мог сменить хостинг и лимиты;
+//   * пауза быстрее секунды не принимается ни при каком замере (пол вежливости
+//     живёт в probe.js, здесь он продублирован как проверка на входе);
+//   * файл плана читается «мягко»: нет, битый, чужой формат — просто работаем
+//     по записанному, а не роняем сбор.
+const SPEED_PLAN = process.env.HARVEST_SPEED_PLAN
+  || require('path').join(__dirname, '..', 'seo', 'data', 'harvest-speed.json');
+const PLAN_MAX_AGE_DAYS = 30;
+const PLAN_MIN_DELAY = 1000;
+
+function applySpeedPlan(list, file = SPEED_PLAN) {
+  let doc;
+  try { doc = JSON.parse(require('fs').readFileSync(file, 'utf8')); } catch { return list; }
+  const ageDays = (Date.now() - Date.parse(doc.measuredAt || 0)) / 86400000;
+  if (!(ageDays >= 0) || ageDays > PLAN_MAX_AGE_DAYS) return list;
+  for (const row of doc.plan || []) {
+    const src = list.find((s) => s.host === row.host);
+    if (!src || !(row.recommend >= PLAN_MIN_DELAY)) continue;
+    src.measuredMs = row.recommend;
+    src.delayMs = row.recommend;
+  }
+  return list;
+}
+
+applySpeedPlan(SOURCES);
+
 const byHost = (host) => SOURCES.find((s) => s.host === host || s.host === `www.${host}`);
 const byKind = (kind) => SOURCES.filter((s) => s.kind === kind);
 
-module.exports = { SOURCES, byHost, byKind };
+module.exports = { SOURCES, byHost, byKind, applySpeedPlan, PLAN_MIN_DELAY, PLAN_MAX_AGE_DAYS };

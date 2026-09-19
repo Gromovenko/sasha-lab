@@ -104,8 +104,17 @@ async function main() {
           etaHours: Math.round((left * r.perPageMs) / 3600000 * 10) / 10 };
       }).sort((a, b) => a.etaHours - b.etaHours);
       const file = path.join(__dirname, '..', 'seo', 'data', 'harvest-speed.json');
-      require('fs').mkdirSync(path.dirname(file), { recursive: true });
-      require('fs').writeFileSync(file, JSON.stringify({ measuredAt: new Date().toISOString(), plan }, null, 2));
+      const fs = require('fs');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      // Замер по части хостов (--hosts) ДОПОЛНЯЕТ план, а не затирает его:
+      // иначе пере-замер одного источника стёр бы порядок очереди для всех
+      // остальных, и `--plan` пошёл бы собирать один хост из восемнадцати.
+      let prev = [];
+      try { prev = JSON.parse(fs.readFileSync(file, 'utf8')).plan || []; } catch { /* плана ещё нет */ }
+      const fresh = new Set(plan.map((x) => x.host));
+      const merged = [...plan, ...prev.filter((x) => !fresh.has(x.host))]
+        .sort((a, b) => a.etaHours - b.etaHours);
+      fs.writeFileSync(file, JSON.stringify({ measuredAt: new Date().toISOString(), plan: merged }, null, 2));
       console.log('\n  порядок очереди (по времени захода, самые долгие в конце):');
       for (const p of plan) {
         console.log(`    ${p.host.padEnd(20)} пауза ${String(p.recommend).padStart(5)} мс, `
@@ -114,7 +123,7 @@ async function main() {
       }
       console.log(`\n  итого заход: ${Math.round(plan.reduce((a, b) => a + b.etaHours, 0) * 10) / 10} ч`);
       console.log(`  план записан: ${file}`);
-      console.log(`  порядок для очереди:\n    ${plan.filter((p) => p.left > 0).map((p) => p.host).join(' ')}`);
+      console.log(`  порядок для очереди:\n    ${merged.filter((p) => p.left > 0).map((p) => p.host).join(' ')}`);
       break;
     }
     case 'facts': {
