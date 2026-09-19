@@ -109,8 +109,9 @@ async function probeSource(src) {
 
   res.latency = base;
   res.recommend = recommend({ lastGood, steps: res.steps, robotsDelay: res.robotsDelay, now: src.delayMs });
-  // Скорость считаем честно: пауза И время самого ответа.
-  res.perPageMs = res.recommend + (res.latency || 0);
+  // http.get() ставит отметку перед запросом, поэтому время ответа прячется
+  // внутри паузы: шаг = max(пауза, ответ), а не их сумма.
+  res.perPageMs = Math.max(res.recommend, res.latency || 0);
   return res;
 }
 

@@ -43,6 +43,13 @@ const cachePath = (url) =>
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
+// Общие keep-alive агенты: не платим TLS-рукопожатием на каждой странице.
+// Простаивающие сокеты node не держат процесс живым (unref в пуле).
+const agents = {
+  'http:': new http.Agent({ keepAlive: true, maxSockets: 4 }),
+  'https:': new https.Agent({ keepAlive: true, maxSockets: 4 }),
+};
+
 function raw(url, { redirects = 5, timeout = 20000, ua = UA, maxBytes = 4 * 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -59,6 +66,7 @@ function raw(url, { redirects = 5, timeout = 20000, ua = UA, maxBytes = 4 * 1024
         'Accept-Language': 'ru-RU,ru;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
       },
+      agent: agents[u.protocol] || agents['https:'],
       timeout,
     }, (res) => {
       const code = res.statusCode || 0;
