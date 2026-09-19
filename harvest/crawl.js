@@ -70,16 +70,22 @@ async function sitemapUrls(host, { ua, delayMs, seeds, hostFix = false, limit = 
 }
 
 // Обход по ссылкам — когда sitemap нет или он пустой.
-async function walk(src, limit) {
+//
+// Страницу отдаём вызывающему сразу (onPage), а не копим в массиве: тело
+// страницы весит сотни килобайт, и «сначала всё скачать, потом всё разобрать»
+// на большом источнике кончается heap limit (см. комментарий в crawlSource).
+async function walk(src, limit, onPage) {
   const seen = new Set(src.seeds);
   const queue = [...src.seeds];
   const found = [];
-  while (queue.length && found.length < limit) {
+  let taken = 0;
+  while (queue.length && taken < limit) {
     const url = queue.shift();
     let r;
     try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); } catch { continue; }
     if (r.skipped || r.status !== 200) continue;
-    found.push({ url, body: r.body });
+    taken += 1;
+    if (onPage) await onPage(url, r.body); else found.push({ url, body: r.body });
     for (const l of html.links(r.body, url)) {
       if (seen.size > limit * 20) break;
       if (seen.has(l)) continue;
@@ -169,29 +175,25 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
     return stat;
   }
 
-  const pages = [];
-  if (entries.length) {
-    for (const { loc: url } of entries.slice(0, max)) {
-      let r;
-      try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); }
-      catch (e) { stat.errors += 1; continue; }
-      if (r.skipped === 'robots') { stat.robots += 1; continue; }
-      if (r.status !== 200) { stat.errors += 1; continue; }
-      pages.push({ url, body: r.body });
-    }
-  } else if (stat.listed === 0) {
-    for (const p of await walk(src, max)) if (!known.has(p.url)) pages.push(p);
-  }
-
-  for (const p of pages) {
+  // Страница разбирается и сохраняется СРАЗУ, а не копится в памяти.
+  //
+  // Раньше здесь был массив pages: сначала скачивались все страницы захода,
+  // потом разбирались. При потолке в полторы тысячи адресов это полтора
+  // гигабайта html в куче — 19.09.2026 steklafar.ru так и упал, «FATAL ERROR:
+  // Reached heap limit», не сохранив НИ ОДНОЙ страницы за 4 минуты работы.
+  // Потолок кучи тут не лечение: расход рос вместе с maxPages, а самый крупный
+  // источник — 30 тысяч адресов. Инкрементальная обработка держит в памяти одну
+  // страницу и заодно делает заход прерываемым: убитый на середине сбор
+  // оставляет всё, что успел, а не ноль.
+  const handle = async (url, body) => {
     stat.fetched += 1;
-    const text = html.strip(p.body);
+    const text = html.strip(body);
     const doc = {
-      source_id: row.id, url: p.url, http_status: 200,
-      title: html.title(p.body), author: html.author(p.body),
-      published_at: html.published(p.body), text,
+      source_id: row.id, url, http_status: 200,
+      title: html.title(body), author: html.author(body),
+      published_at: html.published(body), text,
       meta: { kind: src.kind, lang: src.lang || 'ru',
-        price: src.kind === 'parts' ? html.price(p.body) : undefined },
+        price: src.kind === 'parts' ? html.price(body) : undefined },
       skip_reason: (text.match(TOPIC) || []).length < TOPIC_MIN ? 'не про свет'
         : text.length < 400 ? 'слишком короткая' : null,
     };
@@ -199,7 +201,21 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
     const saved = await store.saveDocument(doc);
     stat.saved += 1;
     if (onDoc) await onDoc(doc, saved);
+  };
+
+  if (entries.length) {
+    for (const { loc: url } of entries.slice(0, max)) {
+      let r;
+      try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); }
+      catch (e) { stat.errors += 1; continue; }
+      if (r.skipped === 'robots') { stat.robots += 1; continue; }
+      if (r.status !== 200) { stat.errors += 1; continue; }
+      await handle(url, r.body);
+    }
+  } else if (stat.listed === 0) {
+    await walk(src, max, async (url, body) => { if (!known.has(url)) await handle(url, body); });
   }
+
   await store.touchSource(row.id);
   return stat;
 }

@@ -74,6 +74,9 @@ wait_mem() {
   done
 }
 
+FAILED=/tmp/sashalab-harvest-failed.$$
+: > "$FAILED"
+
 echo "=== $(TZ=Europe/Moscow date '+%F %H:%M МСК') очередь сбора: $* (par=$PAR, heap=${HEAP_MB}М, порог ${MIN_FREE_MB}М)"
 for host in "$@"; do
   while [ "$(jobs -rp | wc -l)" -ge "$PAR" ]; do sleep 10; done
@@ -87,9 +90,33 @@ for host in "$@"; do
     nice -n 15 ionice -c3 \
       node --max-old-space-size="$HEAP_MB" harvest/run.js crawl "$host" ${LIMIT:+--limit "$LIMIT"} \
       >> "$LOGDIR/$host.log" 2>&1
-    echo "  <- $host завершён код=$? $(TZ=Europe/Moscow date '+%H:%M МСК')"
+    code=$?
+    echo "  <- $host завершён код=$code $(TZ=Europe/Moscow date '+%H:%M МСК')"
+    # 134 = V8 «heap limit», 137 = убит OOM-killer. Такой источник не «собран»,
+    # он оборвался — и без пометки это видно только чтением лога построчно.
+    [ "$code" -ne 0 ] && echo "$host" >> "$FAILED"
   ) &
   sleep 5
 done
 wait
+
+# Один повтор по упавшим. Сбор инкрементальный (страница сохраняется сразу,
+# уже собранные адреса пропускаются), поэтому повтор продолжает с того места,
+# где источник оборвался, а не начинает заново.
+if [ -s "$FAILED" ]; then
+  RETRY=$(tr '\n' ' ' < "$FAILED")
+  echo "=== $(TZ=Europe/Moscow date '+%F %H:%M МСК') повтор по упавшим: $RETRY"
+  for host in $RETRY; do
+    wait_mem
+    echo "  -> $host (повтор)"
+    (
+      echo 900 > /proc/self/oom_score_adj 2>/dev/null || true
+      nice -n 15 ionice -c3 \
+        node --max-old-space-size="$HEAP_MB" harvest/run.js crawl "$host" ${LIMIT:+--limit "$LIMIT"} \
+        >> "$LOGDIR/$host.log" 2>&1
+      echo "  <- $host повтор завершён код=$? $(TZ=Europe/Moscow date '+%H:%M МСК')"
+    )
+  done
+fi
+rm -f "$FAILED"
 echo "=== $(TZ=Europe/Moscow date '+%F %H:%M МСК') очередь пройдена"
