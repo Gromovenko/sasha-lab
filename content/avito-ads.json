@@ -1,7 +1,7 @@
 {
   "studio": {
-    "address": "",
-    "imageBase": "",
+    "address": "Ростов-на-Дону, пр. Стачки, 68",
+    "imageBase": "https://sashalab.77-105-168-153.sslip.io/feed/img",
     "phone": "",
     "managerName": "Александр",
     "workDays": ["пн.", "вт.", "ср.", "чт.", "пт.", "сб."],
