@@ -1,4 +1,4 @@
-// Статик-сервер для зеркала sasha-lab.ru. Без зависимостей.
+// Веб-сервер sasha-lab.ru: страницы сайта, база знаний, /admin, /cabinet, /crm. Без зависимостей.
 // Страницы лежат в mirror/sasha-lab.ru, ассеты — в mirror/cdn и mirror/stub.
 const http = require('http');
 const fs = require('fs');
@@ -25,6 +25,9 @@ const PAGES = path.join(ROOT, 'sasha-lab.ru');
 const DIST = path.join(__dirname, 'dist');   // база знаний, собирается content/build.js
 const PORT = Number(process.env.PORT || 3060);
 const HOST = process.env.HOST || '127.0.0.1';
+const SITE = process.env.SITE_ORIGIN || 'https://sasha-lab.ru';
+const NOINDEX_ALL = process.env.SITE_NOINDEX === '1';
+const PRIVATE = ['/admin', '/cabinet', '/crm', '/seo', '/api'];
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -78,23 +81,32 @@ http.createServer(async (req, res) => {
     return questions.handleAsk(req, res);
   }
 
-  // Это ЗЕРКАЛО живого сайта клиента. Индексировать его нельзя ни при каких
-  // условиях: копия конкурирует с оригиналом за те же запросы и в лучшем случае
-  // будет склеена, в худшем — утопит sasha-lab.ru как дубль. Отсюда robots.txt
-  // и заголовок на каждый ответ.
-  if (req.url.split('?')[0] === '/robots.txt') {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' });
-    return res.end('User-agent: *\nDisallow: /\n');
+  // Публичный сайт индексируется; закрыты только служебные разделы.
+  // SITE_NOINDEX=1 возвращает полное закрытие (тестовый контур).
+  const urlPath = req.url.split('?')[0];
+  const priv = NOINDEX_ALL || PRIVATE.some(x => urlPath === x || urlPath.startsWith(x + '/'));
+  const robotsHdr = priv ? { 'X-Robots-Tag': 'noindex, nofollow' } : {};
+  if (urlPath === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', ...robotsHdr });
+    return res.end(NOINDEX_ALL ? 'User-agent: *\nDisallow: /\n'
+      : `User-agent: *\n${PRIVATE.map(x => 'Disallow: ' + x + '/').join('\n')}\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\nSitemap: ${SITE}/sitemap-baza.xml\n`);
+  }
+  if (urlPath === '/sitemap.xml') {
+    const now = new Date().toISOString().slice(0, 10);
+    const pages = ['/', '/fara', '/remont-far', '/ustanovka-linz', '/privacypolicy']
+      .map(u => `<url><loc>${SITE}${u}</loc><lastmod>${now}</lastmod></url>`).join('');
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+    return res.end(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${pages}</urlset>`);
   }
 
   const file = resolve(req.url);
   if (!file) {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' });
-    return res.end('404: в зеркале sasha-lab.ru такой страницы нет');
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...robotsHdr });
+    return res.end('404: страница не найдена');
   }
   res.writeHead(200, {
     'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream',
-    'X-Robots-Tag': 'noindex, nofollow',
+    ...robotsHdr,
   });
   fs.createReadStream(file).pipe(res);
-}).listen(PORT, HOST, () => console.log(`sasha-lab mirror on http://${HOST}:${PORT}`));
+}).listen(PORT, HOST, () => console.log(`sasha-lab on http://${HOST}:${PORT}`));
