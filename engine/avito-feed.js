@@ -12,13 +12,15 @@ const opts = (n, arr) => (arr && arr.length ? `<${n}>${arr.map((o) => `<Option>$
 
 function load(file = CONFIG) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
 
+const live = (cfg) => (cfg.ads || []).filter((a) => !a.draft);
+
 function validate(cfg) {
   const bad = [];
   const s = cfg.studio || {};
   if (!s.address) bad.push('studio.address: нет адреса студии');
   if (!s.imageBase) bad.push('studio.imageBase: нет базового адреса фото');
   const ids = new Set();
-  (cfg.ads || []).forEach((a, i) => {
+  live(cfg).forEach((a, i) => {
     const w = `ads[${i}] ${a.id || '?'}`;
     if (!a.id) bad.push(`${w}: нет Id`);
     else if (ids.has(a.id)) bad.push(`${w}: повтор Id`);
@@ -28,7 +30,7 @@ function validate(cfg) {
     if (!(Number(a.price) > 0)) bad.push(`${w}: не задана цена`);
     if (!a.images || !a.images.length) bad.push(`${w}: нет фото`);
   });
-  if (!(cfg.ads || []).length) bad.push('ads: пустой список объявлений');
+  if (!live(cfg).length) bad.push('ads: пустой список объявлений');
   return bad;
 }
 
@@ -37,19 +39,19 @@ function adXml(a, s) {
   const imgs = (a.images || []).map((f) => `<Image url="${esc(/^https?:/.test(f) ? f : s.imageBase.replace(/\/$/, '') + '/' + f)}"/>`).join('');
   const prices = (a.priceList || []).map((p) => `<Service>${tag('ServiceName', p.name)}${tag('ServicePrice', p.price)}${p.from ? '<ServiceStartingPrice>Да</ServiceStartingPrice>' : ''}${tag('ServicePriceType', p.type || 'за услугу')}</Service>`).join('');
   return `<Ad>${tag('Id', a.id)}${tag('Address', s.address)}<Category>Предложение услуг</Category>` +
-    `${tag('ServiceType', d.serviceType || 'Транспорт, перевозки')}${tag('Title', a.title)}${tag('Description', a.description)}` +
+    `${tag('ServiceType', d.serviceType || 'Автосервис, аренда')}${tag('Title', a.title)}${tag('Description', a.description)}` +
     `${tag('ServiceSubtype', d.serviceSubtype || 'Автосервис')}${tag('AutoserviceServiceType', d.autoserviceServiceType || 'Тюнинг и оборудование')}` +
-    `${tag('CarServiceType', d.carServiceType || 'Сервисный центр')}${tag('CarServiceVehicleType', d.vehicleType || 'Легковые авто')}` +
+    `${tag('CarServiceType', d.carServiceType)}${tag('CarServiceVehicleType', d.vehicleType)}` +
     `${opts('Make', d.make)}${tag('Guarantee', d.guarantee)}${tag('WorkExperience', d.workExperience)}` +
     `${opts('WorkDays', s.workDays)}${tag('WorkTimeFrom', s.workTimeFrom)}${tag('WorkTimeTo', s.workTimeTo)}` +
     `${opts('ContactDays', s.workDays)}${tag('ContactTimeFrom', s.workTimeFrom)}${tag('ContactTimeTo', s.workTimeTo)}` +
     `${prices ? `<PriceList>${prices}</PriceList>` : ''}${tag('Price', a.price)}${tag('ManagerName', s.managerName)}` +
-    `${tag('ContactPhone', s.phone)}<AllowEmail>Да</AllowEmail><AdStatus>Free</AdStatus><Images>${imgs}</Images></Ad>`;
+    `${tag('ContactPhone', s.phone)}${tag('AllowEmail', d.allowEmail)}<AdStatus>Free</AdStatus><Images>${imgs}</Images></Ad>`;
 }
 
 function build(cfg = load()) {
   const s = cfg.studio || {};
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<Ads target="Avito.ru" formatVersion="3">\n${(cfg.ads || []).map((a) => adXml(a, s)).join('\n')}\n</Ads>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<Ads target="Avito.ru" formatVersion="3">\n${live(cfg).map((a) => adXml(a, s)).join('\n')}\n</Ads>\n`;
 }
 
 module.exports = { load, validate, build };
