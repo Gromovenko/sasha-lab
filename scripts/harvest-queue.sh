@@ -9,7 +9,9 @@
 #   scripts/harvest-queue.sh host1 host2 ...       # полный сбор перечисленных хостов
 #   scripts/harvest-queue.sh --plan                # порядок из замера скорости (см. ниже)
 #   HARVEST_LIMIT=60 scripts/harvest-queue.sh ...  # ограничить страницы за заход
-#   HARVEST_PAR=2 ...                              # параллельность (по умолчанию 1, потолок 2)
+#   HARVEST_PAR=3 ...                              # параллельность (по умолчанию 1, потолок 3)
+#   HARVEST_LOCK=/tmp/sashalab-harvest-<host>.lock # свой замок: вынести медленный источник
+#                                                  # в отдельный процесс рядом с основной очередью
 #
 # `--plan` берёт хосты из seo/data/harvest-speed.json — файла, который пишет
 # `node harvest/run.js probe`: там для каждого источника измеренная безопасная
@@ -30,7 +32,7 @@ cd /opt/sasha-lab 2>/dev/null || cd "$(dirname "$0")/.." || exit 1
 # крон садится поверх идущего сутками полного захода — двойная нагрузка на нас
 # и, что хуже, двойная частота запросов к каждому чужому сайту, то есть ровно
 # тот случай, ради которого всё остальное здесь и меряется.
-LOCK=/tmp/sashalab-harvest.lock
+LOCK="${HARVEST_LOCK:-/tmp/sashalab-harvest.lock}"
 if [ -z "${HARVEST_LOCKED:-}" ]; then
   export HARVEST_LOCKED=1
   # -E 99: «замок занят» должно отличаться от обычной единицы, которую вернёт
@@ -40,7 +42,7 @@ if [ -z "${HARVEST_LOCKED:-}" ]; then
   exit "$rc"
 fi
 
-PAR="${HARVEST_PAR:-1}"; [ "$PAR" -gt 2 ] && PAR=2
+PAR="${HARVEST_PAR:-1}"; [ "$PAR" -gt 3 ] && PAR=3
 MIN_FREE_MB="${HARVEST_MIN_FREE_MB:-1500}"   # ниже этого новый сбор не стартует
 # 512 МБ не хватало на источники с большой картой сайта (legal-xenon, steklafar,
 # mtflight-shop, statlight, nts-auto падали по heap ещё 18.09) — потолок поднят
