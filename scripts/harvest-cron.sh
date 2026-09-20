@@ -43,6 +43,7 @@ for what in works parts community; do
   timeout 14400 node harvest/run.js crawl "$what" --limit "$LIMIT" || echo "  ! этап $what не доехал"
 done
 timeout 1800 node harvest/run.js facts --limit 2000 || echo '  ! разбор фактов упал'
+timeout 900 node harvest/run.js links || echo '  ! база авто со ссылками не пересобралась'
 node harvest/run.js stats
 
 # Спрос: Wordstat + Вебмастер + GSC → семантика → сео-память. Без ключей команда

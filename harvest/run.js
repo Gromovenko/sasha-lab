@@ -10,6 +10,7 @@
 //   node harvest/run.js tg-import <result.json> [--channel имя]
 //   node harvest/run.js probe [--hosts a,b]     — замер безопасной скорости источников
 //   node harvest/run.js facts [--limit 500]     — разбор скачанного в факты
+//   node harvest/run.js links [--check N] [--csv файл] — база авто со ссылками на все ресурсы
 //   node harvest/run.js stats                   — что накоплено
 //
 // Сбор идёт медленно НАМЕРЕННО (пауза на источник, потолок страниц за заход):
@@ -25,6 +26,7 @@ const store = require('./store');
 const tg = require('./telegram');
 const db = require('../seo/lib/db');
 const http = require('./http');
+const links = require('./links');
 
 const HELP = `
 sasha-lab · сбор базы знаний
@@ -36,6 +38,8 @@ sasha-lab · сбор базы знаний
   probe [--hosts a,b]        замер безопасной скорости каждого источника + план очереди
   facts [--limit 500]        разбор скачанного в машины/комплектующие/совместимость
   facts --reparse            пересчитать черновые факты с нуля (после правки правил)
+  links [--csv файл]         пересобрать «машина → ссылки на все ресурсы»; --csv выгружает таблицу
+  links --check N            проверить живость N давно не проверявшихся ссылок
   stats                      что накоплено
 
 Окружение: SASHALAB_PG_URL (без неё сбор пишет NDJSON в .harvest-out и говорит об этом).
@@ -134,6 +138,20 @@ async function main() {
       const st = await facts.run({ limit: Number(flag('limit', 500)), reparse: argv.includes('--reparse') });
       console.log(`  разобрано документов ${st.docs}: машин ${st.vehicles}, `
         + `совместимостей ${st.fitment}, комплектующих ${st.parts}`);
+      break;
+    }
+    case 'links': {
+      if (argv.includes('--check')) {
+        const r = await links.check({ limit: Number(flag('check', 200)) });
+        return console.log(`  проверено ${r.checked}: живых ${r.ok}, мёртвых/закрытых ${r.dead}`);
+      }
+      const r = await links.rebuild();
+      console.log(`  связей ${r.links}; машин со ссылками ${r.cars} из ${r.vehicles}`);
+      const out = flag('csv');
+      if (out) {
+        require('fs').writeFileSync(out, '\ufeff' + links.toCsv(await links.exportRows()));
+        console.log(`  таблица: ${out}`);
+      }
       break;
     }
     case 'stats': {

@@ -257,3 +257,14 @@ test('план скорости: свежий перекрывает реест�
   assert.equal(applySpeedPlan(list(), file)[0].delayMs, 4000, 'битый план не роняет сбор');
   fs.unlinkSync(file);
 });
+
+test('links: нормализация адреса и заголовка даёт границы слага марка-модель', () => {
+  const { NORM } = require('../harvest/links');
+  assert.match(NORM("'x'"), /regexp_replace\(lower\('x'\)/);
+  // тот же приём в JS: слаг не должен липнуть к чужой модели
+  const norm = (s) => '-' + s.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-';
+  const hit = (url, slug) => norm(url).includes(`-${slug}-`);
+  assert.ok(hit('https://electro-kot.ru/haval/jolion/2021', 'haval-jolion'));
+  assert.ok(!hit('https://x.ru/haval/jolion-pro', 'haval-jolion-max'));
+  assert.ok(!hit('https://x.ru/mazda/30', 'mazda-3'));
+});
