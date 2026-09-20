@@ -162,6 +162,8 @@ const SOURCES = [
     seeds: ['https://parafara.ru/'], include: /./, delayMs: 1000, maxPages: 400 },
   { host: '1st-garage.ru', kind: 'works', title: '1st Garage',
     seeds: ['https://1st-garage.ru/'], include: /./, delayMs: 1000, maxPages: 400 },
+  { host: 'atomicgarage.ru', kind: 'works', title: 'Atomic Garage',
+    seeds: ['https://atomicgarage.ru/'], include: /./, delayMs: 1000, maxPages: 2800 },
   { host: 'bgt-svet.ru', kind: 'works', title: 'BGT Svet',
     seeds: ['https://bgt-svet.ru/'], include: /./, delayMs: 1000, maxPages: 500 },
   { host: 'far-master.com', kind: 'works', title: 'Far Master',
