@@ -19,6 +19,8 @@ const assistant = require('./seo/assistant-http');
 // отдельный веб-сервер ради двух экранов плодить незачем, фоновая работа
 // движка вынесена в engine/worker.js.
 const crm = require('./engine/crm');
+const avitoFeed = require('./engine/avito-feed');
+const FEED_IMG = path.join(__dirname, 'uploads', 'feed');
 
 const ROOT = path.join(__dirname, 'mirror');
 const PAGES = path.join(ROOT, 'sasha-lab.ru');
@@ -97,6 +99,22 @@ http.createServer(async (req, res) => {
       .map(u => `<url><loc>${SITE}${u}</loc><lastmod>${now}</lastmod></url>`).join('');
     res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
     return res.end(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${pages}</urlset>`);
+  }
+
+  // Фид автозагрузки Авито и фото к нему (папка uploads/feed, куда пишет Telegram-бот с #feed).
+  if (urlPath === '/feed/avito.xml') {
+    let bad;
+    try { bad = avitoFeed.validate(avitoFeed.load()); } catch (e) { bad = [String(e.message)]; }
+    if (bad.length) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', ...robotsHdr }); return res.end('Фид не готов'); }
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(avitoFeed.build());
+  }
+  if (urlPath.startsWith('/feed/img/')) {
+    const f = path.normalize(path.join(FEED_IMG, decodeURIComponent(urlPath.slice(10))));
+    if (f.startsWith(FEED_IMG + path.sep) && fs.existsSync(f) && fs.statSync(f).isFile()) {
+      res.writeHead(200, { 'Content-Type': TYPES[path.extname(f).toLowerCase()] || 'application/octet-stream' });
+      return fs.createReadStream(f).pipe(res);
+    }
   }
 
   const file = resolve(req.url);
