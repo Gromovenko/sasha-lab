@@ -112,6 +112,53 @@ const SOURCES = [
     // держит запрос в секунду — те же 30 тысяч адресов это ~11 часов.
     seeds: ['https://electro-kot.ru/'], include: /./, delayMs: 1000, maxPages: 30000 },
 
+  // ── партия 20.09.2026: 20 сайтов студий и магазинов света (список от владельца) ──
+  // Замер перед добавлением (curl, 20.09): у всех главная 200, полного Disallow нет.
+  // НЕ добавлены: ремонт-фар-москва.рф (robots.txt «Disallow: /» — полный запрет) и
+  // ledcar.su (отдаёт js-челлендж с кукой вместо страниц — обход не делаем);
+  // tuningfar.com уже в реестре. kind угадан по названию сайта: works — студия/услуги,
+  // parts — магазин. maxPages ≈ размер карты сайта; у малых сайтов запас на обход по ссылкам.
+  { host: 'eaglelab.ru', kind: 'works', title: 'EagleLab',
+    seeds: ['https://eaglelab.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'master-far.ru', kind: 'works', title: 'Master-Far',
+    seeds: ['https://master-far.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'mga.moscow', kind: 'works', title: 'MGA Moscow',
+    seeds: ['https://mga.moscow/'], include: /./, delayMs: 1000, maxPages: 150 },
+  { host: 'spunkybeam.ru', kind: 'works', title: 'SpunkyBeam',
+    seeds: ['https://spunkybeam.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'lumauto.ru', kind: 'parts', title: 'Lumauto',
+    seeds: ['https://lumauto.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'brighton-studio.ru', kind: 'works', title: 'Brighton Studio',
+    seeds: ['https://brighton-studio.ru/'], include: /./, delayMs: 1000, maxPages: 200 },
+  { host: 'amdetailing.ru', kind: 'works', title: 'AM Detailing',
+    seeds: ['https://amdetailing.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'xn--e1aannabetcq5b.xn--p1ai', kind: 'works', title: 'Ксенон-центр',
+    seeds: ['https://xn--e1aannabetcq5b.xn--p1ai/'], include: /./, delayMs: 1000, maxPages: 500 },
+  { host: 'faraonlight.ru', kind: 'parts', title: 'Faraonlight',
+    seeds: ['https://faraonlight.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'xenonshop54.ru', kind: 'parts', title: 'Xenonshop54',
+    seeds: ['https://xenonshop54.ru/'], include: /./, delayMs: 3000, maxPages: 6500 }, // robots: Crawl-delay 3
+  { host: 'lightstudio.moscow', kind: 'works', title: 'Light Studio Moscow',
+    seeds: ['https://lightstudio.moscow/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'tuning-far.su', kind: 'works', title: 'Tuning-Far',
+    seeds: ['https://tuning-far.su/'], include: /./, delayMs: 1000, maxPages: 150 },
+  { host: 'biled.ru', kind: 'parts', title: 'Biled',
+    seeds: ['https://biled.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'www.autooptica.ru', kind: 'works', title: 'Autooptica',
+    seeds: ['https://www.autooptica.ru/'], include: /./, delayMs: 1000, maxPages: 1000 },
+  { host: 'ledtechbeams.ru', kind: 'parts', title: 'LedTechBeams',
+    seeds: ['https://ledtechbeams.ru/'], include: /./, delayMs: 1000, maxPages: 100 },
+  { host: 'svetodiod96.ru', kind: 'parts', title: 'Svetodiod96',
+    seeds: ['https://svetodiod96.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'remoptika.ru', kind: 'works', title: 'Remoptika',
+    seeds: ['https://remoptika.ru/'], include: /./, delayMs: 1000, maxPages: 9500 },
+  { host: 'autolight24.ru', kind: 'works', title: 'Autolight24',
+    seeds: ['https://autolight24.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+  { host: 'ledstudio.org', kind: 'parts', title: 'LedStudio',
+    seeds: ['https://ledstudio.org/'], include: /./, delayMs: 1000, maxPages: 950 },
+  { host: 'daoptika.ru', kind: 'works', title: 'DAoptika',
+    seeds: ['https://daoptika.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+
   // ── этап 3: сообщество ───────────────────────────────────────────────────
   // Drive2 ВЫКЛЮЧЕН (09.09.2026): robots.txt отдаёт «User-Agent: * / Disallow: /» —
   // полный запрет всем, кроме поимённо разрешённых поисковиков. Утром того же дня
