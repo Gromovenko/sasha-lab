@@ -92,6 +92,12 @@ const SOURCES = [
     seeds: ['https://dixel.store/'],
     sitemaps: ['https://dixel.store/index.php?route=feed/google_sitemap'],
     include: /./, delayMs: 1000, maxPages: 4800 },
+  { host: 'viper-auto.ru', kind: 'parts', title: 'Viper',
+    // Бренд Viper (модули/линзы) — конкурент на Авито использует его в объявлениях.
+    // Карта сайта ~380 адресов (282 /catalog/, 68 /download-center/), в ней http://
+    // при сайте на https — тот же хост, разбор карты это переносит. robots.txt
+    // (замер 20.09.2026): закрыты только ?d=*, /f/, /fm/, /tmp/; Crawl-delay нет.
+    seeds: ['https://viper-auto.ru/'], include: /./, delayMs: 1500, maxPages: 450 },
   { host: 'statlight.ru', kind: 'parts', title: 'Statlight',
     seeds: ['https://statlight.ru/'], include: /./, delayMs: 1000, maxPages: 2650 },
   { host: 'optima-light.ru', kind: 'parts', title: 'Optima-Light',
