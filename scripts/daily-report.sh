@@ -12,10 +12,14 @@ cd /opt/sasha-lab || exit 1
 ENV=seo/.env
 set -a; . "$ENV"; set +a
 [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || { echo "нет TELEGRAM_BOT_TOKEN в $ENV" >&2; exit 2; }
-API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+# С этого хоста api.telegram.org напрямую недоступен: ходим через SSH-туннель
+# sashalab-tgtunnel (systemd, 127.0.0.1:8443 -> EU -> api.telegram.org:443).
+# TLS сквозной: имя хоста то же, --resolve лишь подменяет адрес.
+TG_PORT="${TG_PORT:-8443}"
+API="https://api.telegram.org:${TG_PORT}/bot${TELEGRAM_BOT_TOKEN}"
 tg() { # метод, аргументы curl; токен в URL идёт через stdin, не в ps
   local m="$1"; shift
-  printf 'url = "%s/%s"\n' "$API" "$m" | curl -sS -m 20 -K - "$@"
+  printf 'url = "%s/%s"\n' "$API" "$m" | curl -sS -m 20 --resolve "api.telegram.org:${TG_PORT}:127.0.0.1" -K - "$@"
 }
 
 if [ -z "${TELEGRAM_CHAT_ID:-}" ] && [ -z "${DRY:-}" ]; then
