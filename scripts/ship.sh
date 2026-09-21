@@ -14,7 +14,12 @@ rsync -az -e "$SSH" --exclude .git --exclude node_modules --exclude dist \
   --exclude uploads --exclude .ship-stamp.json "$REPO/" "$HOST:/opt/sasha-lab/"
 $SSH $HOST 'chown -R sashaweb:sashaweb /opt/sasha-lab 2>/dev/null; cd /opt/sasha-lab &&
   su sashaweb -c "npm install --omit=dev --silent && set -a && . ./seo/.env && set +a &&
-  node db/migrate.js && node content/build.js && pm2 restart sasha-lab --update-env"'
+  node db/migrate.js && node content/build.js" &&
+  pm2 restart sasha-lab'
+# pm2 процесса — root'овый (запускает сайт под uid sashaweb), а не sashaweb'а:
+# `su sashaweb -c "pm2 restart"` отвечал «Process not found» и выкат вставал
+# между сборкой и рестартом. Окружение сайт читает сам (server-env.js), поэтому
+# --update-env не нужен — он лишь притащил бы в процесс окружение root'а.
 "$REPO/../gromdash/ops/ship-stamp.sh" "$REPO" prod /tmp/sasha-ship-stamp.json
 scp -q -i "$KEY" /tmp/sasha-ship-stamp.json "$HOST:/opt/sasha-lab/.ship-stamp.json"
 echo "[ship] проверка: node /root/gromovenko/gromdash/ops/ship-verify.mjs sasha-lab"
