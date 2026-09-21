@@ -51,7 +51,7 @@ const page = (title, body, { css = '' } = {}) => `<!DOCTYPE html><html lang="ru"
 const ADMIN_NAV = [
   ['/admin/', 'Сводка'], ['/admin/deals', 'Заявки'], ['/admin/clients', 'Клиенты'],
   ['/admin/questions', 'Вопросы'], ['/admin/knowledge', 'Знания и спрос'],
-  ['/admin/users', 'Доступы'], ['/admin/log', 'Журнал'], ['/admin/services', 'Службы'],
+  ['/admin/parsers', 'Парсеры'], ['/admin/users', 'Доступы'], ['/admin/log', 'Журнал'], ['/admin/services', 'Службы'],
 ];
 const CABINET_NAV = [['/cabinet/', 'Мои заявки'], ['/cabinet/profile', 'Профиль']];
 

@@ -6,7 +6,7 @@
 // что происходило, что настроено, кому открыт доступ. Прежние панели остаются
 // и подчищаются постепенно; вход у всех теперь общий — сессия /admin годится
 // и для /crm, и для /seo (см. staffOk, его зовут обе панели).
-const { form } = require('../engine/multipart');
+const { form, readBody } = require('../engine/multipart');
 const accounts = require('./accounts');
 const clients = require('./clients');
 const defaultStore = require('./store');
@@ -304,6 +304,48 @@ async function route(req, res, { store = defaultStore } = {}) {
   if (p === '/admin/profile/kick' && req.method === 'POST') {
     await store.sessions.revokeAllFor(user.id);
     return send(302, '', { Location: '/admin/login', 'Set-Cookie': dropCookie() });
+  }
+
+  // ── парсеры: запуск и остановка сбора через общий замок ─────────────────
+  if (p.startsWith('/admin/parsers/') && req.method === 'POST') {
+    const control = require('../harvest/control');
+    const { SOURCES } = require('../harvest/sources');
+    if (!accounts.atLeast(user, 'admin')) return go('/admin/parsers', 'доступов не хватает: сбор запускает администратор или владелец');
+    // Форма с чекбоксами шлёт host несколько раз — общий разбор форм оставляет
+    // только последний, поэтому тело читаем сами.
+    const params = new URLSearchParams((await readBody(req, 64 * 1024)).toString('utf8'));
+    if (p === '/admin/parsers/start') {
+      const wanted = params.get('one') ? [params.get('one')] : params.getAll('host');
+      // Только хосты из реестра и только включённые: строка из формы уходит
+      // аргументом в очередь, мусору туда дороги нет.
+      const hosts = [...new Set(wanted)].filter((h) => SOURCES.some((s) => s.host === h && s.enabled !== false));
+      const r = await control.start(hosts);
+      await log[r.ok ? 'info' : 'warn']({ area: 'harvest', action: 'parsers.start', actor: ctx.actor, userId: user.id,
+        message: `${hosts.join(' ') || '—'}${r.ok ? '' : ` — ${r.error}`}`, meta: { hosts, pid: r.pid || null }, ...log.web(req) }, { store });
+      return go('/admin/parsers', r.ok ? `сбор запущен: ${hosts.join(', ')}` : `не запущено: ${r.error}`);
+    }
+    if (p === '/admin/parsers/stop') {
+      const lock = params.get('lock') || control.MAIN;
+      const r = await control.stop(lock);
+      await log.info({ area: 'harvest', action: 'parsers.stop', actor: ctx.actor, userId: user.id,
+        message: `${lock}: ${r.ok ? `процессов ${r.stopped || 0}` : r.error}`, meta: r, ...log.web(req) }, { store });
+      if (!r.ok) return go('/admin/parsers', r.error);
+      return go('/admin/parsers', r.note || (r.still ? `остановлено не всё: осталось процессов ${r.still}` : `сбор остановлен (процессов: ${r.stopped})`));
+    }
+  }
+  if (p === '/admin/parsers/log') {
+    const host = url.searchParams.get('host') || '';
+    if (!require('../harvest/sources').SOURCES.some((s) => s.host === host)) return go('/admin/parsers', 'нет такого источника');
+    const t = require('../harvest/control').tail(host);
+    return send(200, pages.parserLog(user, host, t.text, t.file));
+  }
+  if (p === '/admin/parsers') return send(200, await pages.parsers(user, msg));
+  if (p === '/admin/api/parsers.json') {
+    const control = require('../harvest/control');
+    const data = { ...control.status(), sources: await pages.soft(() => require('../harvest/store').sourceStats(), []) };
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+    res.end(JSON.stringify(data, null, 2));
+    return true;
   }
 
   // Машиночитаемая сводка: для дашборда владельца и внешних проверок.

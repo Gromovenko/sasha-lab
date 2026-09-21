@@ -281,6 +281,81 @@ ${tiles([['за сутки', stats.total ?? 0], ['предупреждений',
 ${logTable(rows)}`);
 }
 
+// ── парсеры ───────────────────────────────────────────────────────────────
+// Сбор базы знаний по источникам: сколько взяли, когда писали последний раз,
+// идёт ли сейчас. Запуск и остановка — только через общий замок очереди
+// (harvest/control.js), чтобы на сервере никогда не шло два сбора разом.
+const FRESH_DAYS = 8;   // недельный крон + сутки запаса
+function parserState(row, run) {
+  if (run) return ['идёт', 'hot'];
+  if (row.enabled === false) return ['выключен', ''];
+  if (!row.documents) return ['пусто', 'bad'];
+  const days = row.last_doc_at ? (Date.now() - new Date(row.last_doc_at).getTime()) / 86400000 : Infinity;
+  return days <= FRESH_DAYS ? ['свежий', 'ok'] : [`давно: ${Math.round(days)} дн`, 'bad'];
+}
+
+async function parsers(me, msg) {
+  const control = require('../harvest/control');
+  const { SOURCES } = require('../harvest/sources');
+  const st = await soft(() => control.status(), { busy: false, locks: [] });
+  const fromDb = await soft(() => require('../harvest/store').sourceStats(), []);
+  const byHost = new Map(fromDb.map((r) => [r.host, r]));
+  const rows = SOURCES.map((s) => ({ documents: 0, last_doc_at: null, last24h: 0, ...byHost.get(s.host),
+    host: s.host, kind: s.kind, title: s.title || s.host, enabled: s.enabled !== false }));
+  // Источники, которых в реестре уже нет, но документы в базе остались.
+  for (const r of fromDb) if (!SOURCES.some((s) => s.host === r.host)) rows.push({ ...r, enabled: false, retired: true });
+  const can = accounts.atLeast(me, 'admin');
+  const total = rows.reduce((a, r) => a + (r.documents || 0), 0);
+  const day = rows.reduce((a, r) => a + (r.last24h || 0), 0);
+  const lockLabel = (l) => (l.main ? 'общий замок' : `отдельный: ${l.name.replace(/^sashalab-harvest-?|\.lock$/g, '')}`);
+
+  const running = st.locks.length ? `<table><tr><th>Замок</th><th>Качает</th><th class="num">Идёт с</th><th class="num">Процессов</th><th></th></tr>${st.locks
+    .map((l) => `<tr><td>${esc(lockLabel(l))}</td>
+  <td>${l.crawling.length ? l.crawling.map((c) => `<span class="badge hot">${esc(c.what)}</span>`).join('') : '<span class="muted">ждёт память / между источниками</span>'}</td>
+  <td class="num">${esc(when(l.since))}<br><span class="muted">${esc(ago(l.since))}</span></td><td class="num">${l.pids.length}</td>
+  <td>${can ? `<form class="inline" method="POST" action="/admin/parsers/stop" onsubmit="return confirm('Остановить сбор? Собранное останется в базе, следующий запуск продолжит с места обрыва.')">
+    <input type="hidden" name="lock" value="${esc(l.name)}"><button class="small ghost">Остановить</button></form>` : ''}</td></tr>`).join('')}</table>`
+    : '<p class="sub">Сбор сейчас не идёт.</p>';
+
+  const off = !can || st.busy;
+  const table = `<table><tr><th></th><th>Источник</th><th>Этап</th><th class="num">Документов</th><th class="num">За сутки</th><th class="num">Последняя запись</th><th>Статус</th><th></th></tr>${rows
+    .map((r) => {
+      const run = control.runningFor(r, st);
+      const [label, cls] = parserState(r, run);
+      const startable = r.enabled && !r.retired;
+      return `<tr><td>${startable ? `<input type="checkbox" name="host" value="${esc(r.host)}" style="width:auto"${off ? ' disabled' : ''}>` : ''}</td>
+  <td>${esc(r.title)}<br><a class="muted" href="/admin/parsers/log?host=${encodeURIComponent(r.host)}">${esc(r.host)}</a></td>
+  <td>${esc(r.kind)}</td><td class="num">${esc(r.documents || 0)}</td><td class="num">${r.last24h ? `+${esc(r.last24h)}` : '—'}</td>
+  <td class="num">${esc(when(r.last_doc_at))}<br><span class="muted">${esc(ago(r.last_doc_at))}</span></td>
+  <td><span class="badge ${cls}">${esc(label)}</span>${run && run.what !== r.host ? `<br><span class="muted">этапом ${esc(run.what)}</span>` : ''}</td>
+  <td>${startable && !off ? `<button class="small ghost" name="one" value="${esc(r.host)}">Запустить</button>` : ''}</td></tr>`;
+    }).join('')}</table>`;
+
+  return head('Парсеры', me, '/admin/parsers', `<h1>Парсеры</h1>
+<p class="sub">Сбор базы знаний по источникам. Запуск идёт через общую очередь (<code>scripts/harvest-queue.sh</code>)
+под замком <code>/tmp/sashalab-harvest.lock</code>: один сбор на сервер, с проверкой свободной памяти и паузами, замеренными для каждого сайта.
+Время — московское.</p>
+${note(msg)}
+${tiles([['источников', rows.length], ['документов', total], ['за сутки', day, day ? 'good' : ''],
+  ['сейчас', st.busy ? 'идёт' : st.locks.length ? 'сбоку' : 'стоит', st.busy ? 'warn' : '']])}
+<h2>Идёт сейчас</h2>
+${running}
+<h2>Источники</h2>
+${!can ? '<p class="sub">Запускать и останавливать сбор может администратор или владелец.</p>'
+  : st.busy ? '<p class="sub">Пока идёт сбор под общим замком, новый не запускается — сначала остановите текущий.</p>' : ''}
+<form method="POST" action="/admin/parsers/start">
+${table}
+${off ? '' : '<div class="row"><button>Запустить выбранные</button><span class="muted" style="align-self:center">по очереди, по одному за раз</span></div>'}
+</form>`);
+}
+
+function parserLog(me, host, text, file) {
+  return head('Лог сбора', me, '/admin/parsers', `<h1>Лог сбора: ${esc(host)}</h1>
+<p class="sub"><a href="/admin/parsers">← к парсерам</a> · <code>${esc(file)}</code> · последние строки</p>
+${text == null ? '<p class="sub">Лога нет: этот источник ещё не собирался через очередь на этом сервере.</p>'
+  : `<pre class="log card" style="white-space:pre-wrap;overflow-x:auto">${esc(text)}</pre>`}`);
+}
+
 // ── службы ────────────────────────────────────────────────────────────────
 async function services(me, msg) {
   const mig = await soft(() => db.q('SELECT version, applied_at FROM schema_migrations ORDER BY version'), []);
@@ -399,4 +474,4 @@ const registerPage = ({ err = null, done = false } = {}) => page('Регистр
   <p class="sub" style="margin-top:14px"><a href="/cabinet/login">← ко входу</a></p>`}</form>`);
 
 module.exports = { dashboard, deals, deal, clients, client, questions, knowledge, users,
-  logPage, logTable, services, profile, cabinet, cabinetDeal, registerPage, STAGE, soft };
+  logPage, logTable, services, parsers, parserLog, profile, cabinet, cabinetDeal, registerPage, STAGE, soft };

@@ -156,5 +156,17 @@ async function stats() {
   return { db: true, ...s };
 }
 
-module.exports = { ensureSource, touchSource, saveDocument, knownUrls, unparsed, markParsed, resetFacts,
+// По источнику: сколько документов и когда записан последний — для экрана
+// «Парсеры» в админке. Хосты, которых в базе ещё нет, дополняет вызывающий из реестра.
+async function sourceStats() {
+  if (!db.enabled) return [];
+  return db.q(`
+    SELECT s.host, s.kind, s.title, s.enabled, s.last_run_at,
+           count(d.id)::int AS documents, max(d.fetched_at) AS last_doc_at,
+           count(d.id) FILTER (WHERE d.fetched_at > now() - interval '24 hours')::int AS last24h
+      FROM sources s LEFT JOIN documents d ON d.source_id = s.id
+     GROUP BY s.id ORDER BY s.host`);
+}
+
+module.exports = { ensureSource, sourceStats, touchSource, saveDocument, knownUrls, unparsed, markParsed, resetFacts,
   upsertVehicle, upsertPart, upsertFitment, stats, OUT, sha1 };
