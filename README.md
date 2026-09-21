@@ -305,3 +305,9 @@ npm run seo queue     # что писать дальше и что усилит�
 Ассистент базы знаний: страница `/baza/pomoshnik/`, ручки `POST /baza/assistant`
 и `GET /baza/podbor?make=&model=&year=`. Два режима — владелец машины и
 установщик. Без `NEURALDEEP_API_KEY` отвечает выдержками из базы, не выдумывая.
+
+## Контуры (с 21.09.2026)
+- **Тест — EU**: pm2 `test-sasha-lab` :3060, база `sashalab-test-pg` :5446 (без данных живых людей),
+  каналы выключены, noindex, basic-auth. Выкат: `scripts/deploy-eu.sh`.
+  https://sashalabtest.130-17-14-158.sslip.io
+- **Прод — 77.105.168.153**: выкат `scripts/ship.sh` (отдельная осознанная команда).
