@@ -126,6 +126,9 @@ ssh -i /root/.ssh/ru_key root@10.10.0.2 'cd /opt/sasha-lab && npm install --omit
   pm2 restart sasha-lab --update-env'
 ```
 
+**Выкат на новый прод (77.105.168.153) — `scripts/ship.sh`**: rsync без `--delete`, migrate+build, restart и
+отметка сборки `/opt/sasha-lab/.ship-stamp.json` (сверка: `node ../gromdash/ops/ship-verify.mjs sasha-lab`).
+
 ## Проверка деплоя
 Не «curl / == 200», а полная выборка ассетов: для каждой из 5 страниц выдернуть все
 `src|href|data-original="/…"` и убедиться, что каждая ссылка отдаёт 200

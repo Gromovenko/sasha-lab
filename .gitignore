@@ -14,3 +14,4 @@ seo/data/*.json
 # Фото и файлы клиентов из заявок: чужие персональные данные — не в git
 uploads/
 .test-uploads/
+.ship-stamp.json
