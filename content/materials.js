@@ -68,4 +68,20 @@ async function taken(slug) {
   return fs.existsSync(path.join(KB, `${slug}.md`));
 }
 
-module.exports = { load, fromFiles, fromDb, get, upsert, remove, taken, KB };
+// Всё, что уже закрывает поисковый запрос, — для сео-памяти и автописателя.
+// Не только опубликованные материалы: ручные ответы /baza/otvety/ и черновики
+// автописателя тоже «заняли» свою фразу. Без них `demand` каждый заход
+// перерешал фразу обратно в «new», автописатель заводил под неё очередной
+// черновик (-2, -3 … -8), а однажды опубликовал дубль ответа — и сборка
+// статики встала (21.09.2026, «фары запотели после мойки»).
+async function coverageMetas() {
+  const metas = (await load()).map((m) => m.meta);
+  metas.push(...require('./answers').load().map((a) => a.meta));
+  if (db.enabled) {
+    const drafts = await db.q(`SELECT slug, title, queries FROM materials WHERE origin = 'auto' AND NOT published`);
+    metas.push(...drafts.map((r) => ({ slug: r.slug, title: r.title, queries: r.queries || [] })));
+  }
+  return metas;
+}
+
+module.exports = { load, fromFiles, fromDb, get, upsert, remove, taken, coverageMetas, KB };

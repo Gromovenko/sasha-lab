@@ -107,7 +107,7 @@ async function main() {
     }
     case 'memory': {
       const mem = require('./lib/memory');
-      const mats = (await require('../content/materials').load()).map((m) => m.meta);
+      const mats = await require('../content/materials').coverageMetas();
       const kws = await store.keywords.rows();
       if (!kws.length) return console.error('семантики нет: сначала «wordstat» или «gsc»');
       const r = await mem.sync(mats, kws);
@@ -141,7 +141,7 @@ async function main() {
         try { const r = await fn(); stats[name] = Array.isArray(r) ? r.length : r.collected?.length ?? 0; }
         catch (e) { stats[name] = `ошибка: ${e.message.slice(0, 120)}`; console.error(`  ! ${name}: ${e.message}`); }
       }
-      const mats = (await require('../content/materials').load()).map((m) => m.meta);
+      const mats = await require('../content/materials').coverageMetas();
       const r = await mem.sync(mats, await store.keywords.rows());
       stats.memory = { covered: r.covered, strengthen: r.strengthen, new: r.new };
       await store.runs.finish(runId, { ok: true, stats });

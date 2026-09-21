@@ -182,8 +182,16 @@ async function run({ limit = 2, dry = false, autopublish = process.env.SEO_AUTOP
   if (!db.enabled) throw new Error('нужна база: не задан SASHALAB_PG_URL');
   const q = await memory.queue({ limit: 40 });
   const out = { written: [], skipped: [], errors: [] };
+  const taken = await require('../../content/materials').coverageMetas();
   for (const row of q.new) {
     if (out.written.length >= limit) break;
+    // Очередь могла устареть: фразу уже закрыл ответ или прежний черновик.
+    const dup = memory.decide(row.phrase, taken);
+    if (dup.decision === 'covered') {
+      await memory.remember({ ...dup, demand: row.demand ?? null, note: 'уже закрыто' });
+      out.skipped.push({ phrase: row.phrase, why: `уже закрыто: ${dup.targetSlug}` });
+      continue;
+    }
     const g = await grounding(row.phrase);
     if (!g.score) { out.skipped.push({ phrase: row.phrase, why: 'нет фактов под запрос' }); continue; }
     let page;
@@ -199,6 +207,7 @@ async function run({ limit = 2, dry = false, autopublish = process.env.SEO_AUTOP
       phraseNorm: memory.norm(row.phrase), phrase: row.phrase, decision: 'covered',
       targetSlug: slug, demand: row.demand ?? null, note: publish ? 'автостраница' : 'автостраница, черновик',
     });
+    taken.push({ slug, title: page.title, queries: page.queries });
     out.written.push({ phrase: row.phrase, slug, title: page.title, published: publish, grounding: g.score });
   }
   if (!dry && out.written.length) {
