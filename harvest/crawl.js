@@ -204,11 +204,31 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
   };
 
   if (entries.length) {
+    // Предохранитель от «стены» 429/503. Штраф в http.get растёт до 60 с на
+    // страницу и остаётся до конца захода: vdf-light.ru 20–21.09.2026 так висел
+    // 39 часов без единой новой страницы и держал замок очереди, из-за чего
+    // еженедельный крон (и разбор фактов после него) не стартовал. Подряд
+    // STALL_LIMIT отказов при уже максимальной паузе — площадка нас не пускает:
+    // заход честно прерываем, следующий (крон/очередь) продолжит с этого места,
+    // потому что известные адреса пропускаются.
+    let wall = 0;
     for (const { loc: url } of entries.slice(0, max)) {
       let r;
       try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); }
       catch (e) { stat.errors += 1; continue; }
       if (r.skipped === 'robots') { stat.robots += 1; continue; }
+      if (r.status === 429 || r.status === 503) {
+        stat.errors += 1;
+        const atMax = (http.penalty.get(new URL(url).hostname) || 0) >= 60000;
+        wall = atMax ? wall + 1 : 0;
+        if (wall >= STALL_LIMIT) {
+          stat.blocked = true;
+          console.warn(`  ⛔ ${src.host}: ${wall} отказов подряд при паузе 60 с — заход прерван, повторите позже`);
+          break;
+        }
+        continue;
+      }
+      wall = 0;
       if (r.status !== 200) { stat.errors += 1; continue; }
       await handle(url, r.body);
     }
@@ -219,5 +239,7 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
   await store.touchSource(row.id);
   return stat;
 }
+
+const STALL_LIMIT = Number(process.env.HARVEST_STALL_LIMIT) || 5;
 
 module.exports = { crawlSource, sitemapUrls, walk, titleFromUrl, TOPIC };

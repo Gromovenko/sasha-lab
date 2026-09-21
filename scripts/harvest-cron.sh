@@ -42,7 +42,9 @@ timeout 1800 node harvest/run.js crawl www.hidplanet.com || echo '  ! hidplanet 
 for what in works parts community; do
   timeout 14400 node harvest/run.js crawl "$what" --limit "$LIMIT" || echo "  ! этап $what не доехал"
 done
-timeout 1800 node harvest/run.js facts --limit 2000 || echo '  ! разбор фактов упал'
+# Разбор фактов — локальные правила без ИИ, ~12 док/с. Лимит 2000 за заход при
+# 4 тыс. новых документов в сутки копил хвост годами; 30 тыс. ≈ 45 минут.
+timeout 3600 node harvest/run.js facts --limit 30000 || echo '  ! разбор фактов упал'
 timeout 900 node harvest/run.js links || echo '  ! база авто со ссылками не пересобралась'
 node harvest/run.js stats
 
