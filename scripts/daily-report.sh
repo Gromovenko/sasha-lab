@@ -51,13 +51,16 @@ if [ "$MODE" = test ]; then
 fi
 
 if [ "$MODE" = alert ]; then
-  PROB=""
-  [ "$MEM_MB" -lt 1000 ] && PROB+="память: доступно ${MEM_MB} МБ (<1 ГБ)"$'\n'
-  [ "$DISK_PCT" -ge 90 ] && PROB+="диск заполнен на ${DISK_PCT}%"$'\n'
-  [ "$SITE" != 200 ] && PROB+="сайт отвечает ${SITE}"$'\n'
-  [ "$QPROC" -eq 0 ] && [ "$LOGAGE" -lt 86400 ] && [ "$LOGAGE" -gt 3600 ] && PROB+="сбор остановлен: процессов нет, лог не менялся $((LOGAGE/60)) мин (${LASTLOG##*/})"$'\n'
+  PROB=""; KIND=""   # KIND — стабильный отпечаток беды для дедупа, без «плавающих» минут:
+                      # иначе меняющееся число минут в тексте каждый раз даёт новый хэш
+                      # и алерт шлётся заново каждые 10 мин, пока беда не снята (было так
+                      # 22.09 — 10 сообщений подряд про один и тот же зависший vdf-light).
+  [ "$MEM_MB" -lt 1000 ] && { PROB+="память: доступно ${MEM_MB} МБ (<1 ГБ)"$'\n'; KIND+="mem;"; }
+  [ "$DISK_PCT" -ge 90 ] && { PROB+="диск заполнен на ${DISK_PCT}%"$'\n'; KIND+="disk;"; }
+  [ "$SITE" != 200 ] && { PROB+="сайт отвечает ${SITE}"$'\n'; KIND+="site:$SITE;"; }
+  [ "$QPROC" -eq 0 ] && [ "$LOGAGE" -lt 86400 ] && [ "$LOGAGE" -gt 3600 ] && { PROB+="сбор остановлен: процессов нет, лог не менялся $((LOGAGE/60)) мин (${LASTLOG##*/})"$'\n'; KIND+="queue:${LASTLOG##*/};"; }
   STATE=/var/tmp/sashalab-alert.state
-  H=ok; [ -n "$PROB" ] && H=$(printf '%s' "$PROB" | md5sum | cut -c1-32)
+  H=ok; [ -n "$KIND" ] && H=$(printf '%s' "$KIND" | md5sum | cut -c1-32)
   PREV=$(cat $STATE 2>/dev/null || echo ok)
   [ "$H" = "$PREV" ] && exit 0   # та же беда уже отправлена (или всё в порядке и было в порядке)
   echo "$H" > $STATE
