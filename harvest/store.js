@@ -11,6 +11,10 @@ const db = require('../seo/lib/db');
 const OUT = process.env.HARVEST_OUT || path.join(__dirname, '..', '.harvest-out');
 
 const sha1 = (s) => crypto.createHash('sha1').update(String(s)).digest('hex');
+// postgres text/varchar не принимает NUL (0x00) — изредка попадается в сыром HTML
+// (битая кодировка, вставленные бинарники). Без очистки insert падает ошибкой
+// «invalid byte sequence», и документ теряется целиком (так стоял biled.ru).
+const stripNul = (s) => (typeof s === 'string' ? s.replace(/\u0000/g, '') : s);
 const file = (name) => {
   fs.mkdirSync(OUT, { recursive: true });
   return path.join(OUT, `${name}.ndjson`);
@@ -40,7 +44,9 @@ async function touchSource(id) {
 // Идемпотентно по url: тот же текст не переразбираем (parsed_at не сбрасываем),
 // изменившийся — сбрасываем, чтобы факты пересобрались.
 async function saveDocument(doc) {
-  const rec = { ...doc, text_hash: sha1(doc.text || ''), words: (doc.text || '').split(/\s+/).length };
+  const cleanText = stripNul(doc.text || '');
+  const rec = { ...doc, text: cleanText, title: stripNul(doc.title), author: stripNul(doc.author),
+    text_hash: sha1(cleanText), words: cleanText.split(/\s+/).length };
   if (!db.enabled) { append('documents', rec); return { id: null, ...rec, isNew: true }; }
   const row = await db.one(`
     INSERT INTO documents (source_id, url, http_status, title, author, published_at, text,
