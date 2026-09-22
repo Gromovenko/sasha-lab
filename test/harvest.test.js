@@ -235,6 +235,44 @@ test('загрузчик: 429 поднимает паузу этому хост�
   }
 });
 
+// Параллельные запросы к одному хосту — это ускорение НАС, а не давление на
+// источник: интервал между стартами обязан остаться прежним. Сторожит то, что
+// ломается молча (залп из трёх запросов в одну секунду = бан по IP на второй
+// день) и то, ради чего правка делалась (ожидание ответа больше не
+// складывается с паузой).
+test('загрузчик: три параллельных запроса к хосту идут через паузу, а не залпом', async () => {
+  const nodeHttp = require('node:http');
+  const starts = [];
+  const srv = nodeHttp.createServer((req, res) => {
+    starts.push(Date.now());
+    // Ответ заметно дольше паузы: старая схема ждала паузу ПОСЛЕ ответа и
+    // растягивала заход до max(пауза, ответ) на страницу.
+    setTimeout(() => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<html>ок</html>'); }, 300);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  try {
+    http.penalty.delete('127.0.0.1');
+    http.nextFree.delete('127.0.0.1');
+    const t0 = Date.now();
+    const rs = await Promise.all([1, 2, 3].map((i) =>
+      http.get(`http://127.0.0.1:${port}/p${i}`, { delayMs: 150, useCache: false })));
+    const spent = Date.now() - t0;
+    assert.deepEqual(rs.map((r) => r.status), [200, 200, 200]);
+    starts.sort((a, b) => a - b);
+    for (let i = 1; i < starts.length; i += 1) {
+      assert.ok(starts[i] - starts[i - 1] >= 140,
+        `запросы ушли залпом: интервал ${starts[i] - starts[i - 1]} мс`);
+    }
+    // Последовательно это было бы 3 × (150 + 300) = 1350 мс.
+    assert.ok(spent < 1000, `ожидание ответа всё ещё складывается с паузой: ${spent} мс`);
+  } finally {
+    http.penalty.delete('127.0.0.1');
+    http.nextFree.delete('127.0.0.1');
+    srv.close();
+  }
+});
+
 test('план скорости: свежий перекрывает реестр, старый и слишком быстрый — нет', () => {
   const fs = require('fs');
   const { applySpeedPlan } = require('../harvest/sources');

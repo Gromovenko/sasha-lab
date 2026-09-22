@@ -72,7 +72,8 @@ async function main() {
         const st = await crawl.crawlSource(s, { limit, refetch: argv.includes('--refetch') });
         console.log(`  ${st.host}: в sitemap ${st.listed}, скачано ${st.fetched}, `
           + `сохранено ${st.saved}, не по теме ${st.offtopic}, robots ${st.robots}, `
-          + `ошибок ${st.errors} — ${Math.round((Date.now() - t) / 1000)} с`);
+          + `ошибок ${st.errors}${st.dead ? `, мёртвых адресов ${st.dead}` : ''}`
+          + ` — ${Math.round((Date.now() - t) / 1000)} с`);
       }
       break;
     }

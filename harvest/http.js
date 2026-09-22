@@ -22,7 +22,15 @@ const crypto = require('crypto');
 const UA = process.env.HARVEST_UA ||
   'Mozilla/5.0 (compatible; SashaLabBot/1.0; +https://sasha-lab.ru/baza/)';
 const CACHE = process.env.HARVEST_CACHE || path.join(__dirname, '..', '.harvest-cache');
-const lastHit = new Map();     // host → timestamp последнего запроса
+// Очередь стартов по хосту. Храним не «когда был прошлый запрос», а «когда
+// РАЗРЕШЁН следующий»: слот резервируется до ухода запроса, поэтому несколько
+// параллельных вызовов к одному хосту выстраиваются строго через паузу и не
+// могут стартовать вместе (старая схема «сейчас − lastHit» при конкурентных
+// вызовах читала одно и то же lastHit и выпускала их залпом).
+// Побочно это и есть ускорение: шаг перестаёт быть max(пауза, ответ) — пока
+// ждёт медленный ответ (xenonshop отвечает 4,3 с при паузе 1 с), следующий
+// запрос уходит по расписанию. Частота обращений к чужому серверу прежняя.
+const nextFree = new Map();    // host → timestamp, когда можно отправить следующий запрос
 const robotsCache = new Map(); // host → { rules, fetchedAt }
 // Штраф за 429/503: пауза, которую источник ВЫПРОСИЛ сам, поверх заданной.
 // Нужен потому, что замер скорости (harvest/probe.js) видит мгновенную
@@ -176,9 +184,10 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   if (!allowedBy(rules, u.pathname + u.search)) return { url, status: 0, body: '', skipped: 'robots' };
 
   const pause = Math.max(delayMs, rules.delay, penalty.get(u.hostname) || 0);
-  const wait = pause - (Date.now() - (lastHit.get(u.hostname) || 0));
+  const slot = Math.max(Date.now(), nextFree.get(u.hostname) || 0);
+  nextFree.set(u.hostname, slot + pause);
+  const wait = slot - Date.now();
   if (wait > 0) await sleep(wait);
-  lastHit.set(u.hostname, Date.now());
 
   const r = await raw(url, { ua, maxBytes });
   // «Слишком часто» / «мне сейчас тяжело» — единственный ответ источника, который
@@ -187,6 +196,9 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
     const next = Math.min(PENALTY_MAX, Math.max(pause * 2, (penalty.get(u.hostname) || 0) * 2));
     if (next > (penalty.get(u.hostname) || 0)) {
       penalty.set(u.hostname, next);
+      // Штраф касается и уже зарезервированных слотов: иначе очередь из
+      // нескольких параллельных запросов добьёт хост старой частотой.
+      nextFree.set(u.hostname, Math.max(nextFree.get(u.hostname) || 0, Date.now() + next));
       console.warn(`  ⚠ ${u.hostname} ответил ${r.status} — пауза поднята до ${next} мс до конца захода`);
     }
     // Retry-After площадка присылает не всегда, но если прислала — слушаемся её,
@@ -201,4 +213,4 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   return { url, status: r.status, body: r.body, type: r.type, fromCache: false };
 }
 
-module.exports = { get, raw, robots, allowedBy, parseRobots, UA, BROWSER_UA, CACHE, penalty };
+module.exports = { get, raw, robots, allowedBy, parseRobots, UA, BROWSER_UA, CACHE, penalty, nextFree };

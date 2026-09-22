@@ -203,6 +203,21 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
     if (onDoc) await onDoc(doc, saved);
   };
 
+  // Мёртвый адрес из карты сайта запоминаем, чтобы не звонить по нему каждый
+  // заход. У mtflight-shop.com карта не обновлялась с 2022 года: 499 адресов из
+  // 1390 отвечают 404, и каждый заход тратил на них ~500 запросов и 8 минут.
+  // Пустой документ со skip_reason в разбор фактов не идёт (там skip_reason IS
+  // NULL), но попадает в knownUrls — следующий заход его пропустит. Вернуть
+  // такой адрес в обход можно `--refetch`.
+  const remember404 = async (url, status) => {
+    await store.saveDocument({
+      source_id: row.id, url, http_status: status, title: null, author: null,
+      published_at: null, text: '', meta: { kind: src.kind, dead: true },
+      skip_reason: `мёртвый адрес (${status})`,
+    });
+    stat.dead = (stat.dead || 0) + 1;
+  };
+
   if (entries.length) {
     // Предохранитель от «стены» 429/503. Штраф в http.get растёт до 60 с на
     // страницу и остаётся до конца захода: vdf-light.ru 20–21.09.2026 так висел
@@ -212,26 +227,43 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
     // заход честно прерываем, следующий (крон/очередь) продолжит с этого места,
     // потому что известные адреса пропускаются.
     let wall = 0;
-    for (const { loc: url } of entries.slice(0, max)) {
-      let r;
-      try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); }
-      catch (e) { stat.errors += 1; continue; }
-      if (r.skipped === 'robots') { stat.robots += 1; continue; }
-      if (r.status === 429 || r.status === 503) {
-        stat.errors += 1;
-        const atMax = (http.penalty.get(new URL(url).hostname) || 0) >= 60000;
-        wall = atMax ? wall + 1 : 0;
-        if (wall >= STALL_LIMIT) {
-          stat.blocked = true;
-          console.warn(`  ⛔ ${src.host}: ${wall} отказов подряд при паузе 60 с — заход прерван, повторите позже`);
-          break;
+    let stop = false;
+    const list = entries.slice(0, max);
+    let cursor = 0;
+    // Несколько запросов к источнику идут внахлёст, но НЕ чаще: интервал между
+    // стартами держит лимитер http.get (слот на хост). Смысл в том, что время
+    // ответа перестаёт складываться с паузой — при ответе 4,3 с и паузе 1 с
+    // (www.xenonshop.ru) заход шёл втрое дольше необходимого. Для площадки
+    // частота обращений не изменилась.
+    const worker = async () => {
+      while (!stop) {
+        const i = cursor; cursor += 1;
+        if (i >= list.length) return;
+        const url = list[i].loc;
+        let r;
+        try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); }
+        catch (e) { stat.errors += 1; continue; }
+        if (r.skipped === 'robots') { stat.robots += 1; continue; }
+        if (r.status === 429 || r.status === 503) {
+          stat.errors += 1;
+          const atMax = (http.penalty.get(new URL(url).hostname) || 0) >= 60000;
+          wall = atMax ? wall + 1 : 0;
+          if (wall >= STALL_LIMIT) {
+            stat.blocked = true;
+            stop = true;
+            console.warn(`  ⛔ ${src.host}: ${wall} отказов подряд при паузе 60 с — заход прерван, повторите позже`);
+            return;
+          }
+          continue;
         }
-        continue;
+        wall = 0;
+        if (r.status === 404 || r.status === 410) { stat.errors += 1; await remember404(url, r.status); continue; }
+        if (r.status !== 200) { stat.errors += 1; continue; }
+        await handle(url, r.body);
       }
-      wall = 0;
-      if (r.status !== 200) { stat.errors += 1; continue; }
-      await handle(url, r.body);
-    }
+    };
+    const par = Math.max(1, Math.min(FETCH_PAR, src.fetchPar || FETCH_PAR, list.length));
+    await Promise.all(Array.from({ length: par }, worker));
   } else if (stat.listed === 0) {
     await walk(src, max, async (url, body) => { if (!known.has(url)) await handle(url, body); });
   }
@@ -241,5 +273,9 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
 }
 
 const STALL_LIMIT = Number(process.env.HARVEST_STALL_LIMIT) || 5;
+// Сколько запросов к ОДНОМУ источнику держим в воздухе одновременно. Частоту
+// это не меняет (её держит лимитер), только перестаёт простаивать на ожидании
+// ответа. Три — потолок, дальше упираемся в паузу, а не в сеть.
+const FETCH_PAR = Math.max(1, Math.min(3, Number(process.env.HARVEST_FETCH_PAR) || 3));
 
 module.exports = { crawlSource, sitemapUrls, walk, titleFromUrl, TOPIC };
