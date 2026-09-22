@@ -45,6 +45,17 @@ CUR=$(pgrep -af 'harvest/run.js crawl' | head -1 | sed -E 's/.*crawl +([^ ]+).*/
 # тревога через 143 мин после штатного завершения дозаливки).
 LASTLOG=$(ls -t /var/log/sashalab-harvest/*.log 2>/dev/null | grep -v '/facts-backlog\.log$' | head -1)
 LOGAGE=$(( $(date +%s) - $(stat -c %Y "${LASTLOG:-/dev/null}" 2>/dev/null || echo 0) ))
+# Очередь, дошедшая до конца, пишет в свой лог «очередь пройдена» и замолкает —
+# это норма, а не зависание (инцидент 22.09 20:20: тревога через 68 мин после
+# штатного финала queue-20260922-maxspeed.log). Маркер засчитываем, только если
+# лог очереди не старше самого свежего лога сбора, иначе оборванный ручной заход
+# по одному хосту прикрылся бы финалом прошлой очереди.
+QLOG=$(ls -t /var/log/sashalab-harvest/queue-*.log 2>/dev/null | head -1)
+QDONE=0
+if [ -n "$QLOG" ] && tail -5 "$QLOG" | grep -q 'очередь пройдена'; then
+  QT=$(stat -c %Y "$QLOG"); LT=$(stat -c %Y "${LASTLOG:-/dev/null}" 2>/dev/null || echo 0)
+  [ "$QT" -ge $(( LT - 300 )) ] && QDONE=1
+fi
 
 if [ "$MODE" = test ]; then
   send "Sasha Lab Bot на связи. $NOW. Отчёты будут приходить в этот чат."; exit 0
@@ -58,7 +69,7 @@ if [ "$MODE" = alert ]; then
   [ "$MEM_MB" -lt 1000 ] && { PROB+="память: доступно ${MEM_MB} МБ (<1 ГБ)"$'\n'; KIND+="mem;"; }
   [ "$DISK_PCT" -ge 90 ] && { PROB+="диск заполнен на ${DISK_PCT}%"$'\n'; KIND+="disk;"; }
   [ "$SITE" != 200 ] && { PROB+="сайт отвечает ${SITE}"$'\n'; KIND+="site:$SITE;"; }
-  [ "$QPROC" -eq 0 ] && [ "$LOGAGE" -lt 86400 ] && [ "$LOGAGE" -gt 3600 ] && { PROB+="сбор остановлен: процессов нет, лог не менялся $((LOGAGE/60)) мин (${LASTLOG##*/})"$'\n'; KIND+="queue:${LASTLOG##*/};"; }
+  [ "$QPROC" -eq 0 ] && [ "$QDONE" -eq 0 ] && [ "$LOGAGE" -lt 86400 ] && [ "$LOGAGE" -gt 3600 ] && { PROB+="сбор остановлен: процессов нет, лог не менялся $((LOGAGE/60)) мин (${LASTLOG##*/})"$'\n'; KIND+="queue:${LASTLOG##*/};"; }
   STATE=/var/tmp/sashalab-alert.state
   H=ok; [ -n "$KIND" ] && H=$(printf '%s' "$KIND" | md5sum | cut -c1-32)
   PREV=$(cat $STATE 2>/dev/null || echo ok)
@@ -75,7 +86,9 @@ FIT=$(q "select count(*) from fitment")
 VEH=$(q "select count(distinct vehicle_id) from fitment")
 LINKED=$(q "select count(distinct vehicle_id) from vehicle_links")
 ROWS=$(q "select s.host, count(d.id), s.max_pages, count(d.id) filter (where d.fetched_at > now()-interval '24 hours'), count(d.id) filter (where d.http_status>=400) from sources s left join documents d on d.source_id=s.id where s.enabled group by s.host,s.max_pages order by 2 desc" | awk -F'|' '{p=($3>0)?int($2*100/$3):0; printf "%-22s %5d/%-5d %3d%%  +%d за сутки%s\n",$1,$2,$3,p,$4,($5>0?"  ош:"$5:"")}')
-if [ "$QPROC" -gt 0 ]; then QS="идёт${CUR:+, сейчас: $CUR}"; else QS="НЕ идёт (последний лог: ${LASTLOG##*/}, ${LOGAGE}с назад)"; fi
+if [ "$QPROC" -gt 0 ]; then QS="идёт${CUR:+, сейчас: $CUR}"
+elif [ "$QDONE" -eq 1 ]; then QS="очередь пройдена (${QLOG##*/})"
+else QS="НЕ идёт (последний лог: ${LASTLOG##*/}, ${LOGAGE}с назад)"; fi
 
 send "Sasha Lab — отчёт $NOW
 
