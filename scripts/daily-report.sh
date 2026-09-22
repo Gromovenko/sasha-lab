@@ -39,7 +39,11 @@ LOAD=$(cut -d' ' -f1 /proc/loadavg)
 SITE=$(curl -s -o /dev/null -m 15 -w '%{http_code}' https://sashalab.77-105-168-153.sslip.io/ )
 QPROC=$(pgrep -fc 'harvest-queue|harvest/run.js' )
 CUR=$(pgrep -af 'harvest/run.js crawl' | head -1 | sed -E 's/.*crawl +([^ ]+).*/\1/')
-LASTLOG=$(ls -t /var/log/sashalab-harvest/*.log 2>/dev/null | head -1)
+# facts-backlog.log — разовая ручная дозаливка (разбор в факты), не сама очередь
+# сбора. Она заканчивается и молчит по завершении — это норма, а не зависание,
+# так что в проверку "жив ли сбор" её включать нельзя (инцидент 22.09: ложная
+# тревога через 143 мин после штатного завершения дозаливки).
+LASTLOG=$(ls -t /var/log/sashalab-harvest/*.log 2>/dev/null | grep -v '/facts-backlog\.log$' | head -1)
 LOGAGE=$(( $(date +%s) - $(stat -c %Y "${LASTLOG:-/dev/null}" 2>/dev/null || echo 0) ))
 
 if [ "$MODE" = test ]; then
