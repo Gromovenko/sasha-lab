@@ -66,16 +66,11 @@ test('прайс-лист: «Своя услуга» и чужой тип сто
   assert.ok(feed.validate(cfg2).some((p) => p.includes('тип стоимости')));
 });
 
-test('в боевом фиде прайс-лист есть, название услуги — из справочника Авито', () => {
+test('в боевом фиде прайс-листа нет: справочник услуг площадки недоступен', () => {
   const xml = feed.build(feed.load());
-  assert.ok(xml.includes('<PriceList>'));
-  assert.ok(xml.includes('<ServiceName>Тюнинг и оборудование</ServiceName>'));
-});
-
-test('название услуги вне справочника не проходит', () => {
-  const cfg = base();
-  cfg.ads[0].priceList = [{ name: 'Установка би-лед линз в фары', price: 18000 }];
-  assert.ok(feed.validate(cfg).some((p) => p.includes('ServiceName')));
+  assert.ok(!xml.includes('<PriceList>'));
+  assert.ok(!xml.includes('<ServiceName>'));
+  assert.deepStrictEqual(feed.validate(feed.load()), []);
 });
 
 test('каждый обязательный параметр по отдельности валит проверку', () => {
