@@ -306,3 +306,19 @@ test('links: нормализация адреса и заголовка даё�
   assert.ok(!hit('https://x.ru/haval/jolion-pro', 'haval-jolion-max'));
   assert.ok(!hit('https://x.ru/mazda/30', 'mazda-3'));
 });
+
+test('sources: исчерпанные источники выключены, недобранные остались в заходе', () => {
+  const { SOURCES, EXHAUSTED } = require('../harvest/sources');
+  // Каждый хост из списка исчерпанных должен существовать в реестре: опечатка
+  // в ключе иначе тихо оставила бы сайт в недельном заходе.
+  for (const host of Object.keys(EXHAUSTED)) {
+    const src = SOURCES.find((s) => s.host === host);
+    assert.ok(src, `${host} есть в реестре`);
+    assert.equal(src.enabled, false, `${host} выключен`);
+    assert.match(src.note, /исчерпан \(24\.09\.2026\)/, `${host} объясняет причину`);
+  }
+  // Недобранные источники выключение не задело — иначе сбор встал бы весь.
+  for (const host of ['vdf-light.ru', 'svetodiod96.ru', 'daoptika.ru', 'xenonru.ru', 'legal-xenon.ru']) {
+    assert.notEqual(SOURCES.find((s) => s.host === host).enabled, false, `${host} остался в заходе`);
+  }
+});
