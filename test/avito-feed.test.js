@@ -66,9 +66,16 @@ test('прайс-лист: «Своя услуга» и чужой тип сто
   assert.ok(feed.validate(cfg2).some((p) => p.includes('тип стоимости')));
 });
 
-test('в боевом фиде прайс-листа нет — названия услуг только из справочника Авито', () => {
+test('в боевом фиде прайс-лист есть, название услуги — из справочника Авито', () => {
   const xml = feed.build(feed.load());
-  assert.ok(!xml.includes('<PriceList>'));
+  assert.ok(xml.includes('<PriceList>'));
+  assert.ok(xml.includes('<ServiceName>Тюнинг и оборудование</ServiceName>'));
+});
+
+test('название услуги вне справочника не проходит', () => {
+  const cfg = base();
+  cfg.ads[0].priceList = [{ name: 'Установка би-лед линз в фары', price: 18000 }];
+  assert.ok(feed.validate(cfg).some((p) => p.includes('ServiceName')));
 });
 
 test('каждый обязательный параметр по отдельности валит проверку', () => {
@@ -115,11 +122,11 @@ test('описание: телефон и почта запрещены прав
 
 test('прайс-лист попадает в XML и проверяется', () => {
   const cfg = base();
-  cfg.ads[0].priceList = [{ name: 'Установка би-лед линз в фары', price: 18000, from: true }];
+  cfg.ads[0].priceList = [{ name: 'Тюнинг и оборудование', price: 18000, from: true }];
   assert.deepStrictEqual(feed.validate(cfg), []);
   const xml = feed.build(cfg);
   assert.ok(xml.includes('<PriceList>') && xml.includes('<ServicePrice>18000</ServicePrice>'));
   assert.ok(xml.includes('<ServiceStartingPrice>Да</ServiceStartingPrice>'));
-  cfg.ads[0].priceList = [{ name: 'Установка', price: 'договорная' }];
+  cfg.ads[0].priceList = [{ name: 'Тюнинг и оборудование', price: 'договорная' }];
   assert.ok(feed.validate(cfg).length > 0, 'нецелая цена в прайс-листе должна валить проверку');
 });

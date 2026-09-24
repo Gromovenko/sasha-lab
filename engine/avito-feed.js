@@ -3,7 +3,7 @@
 //
 // Состав и значения полей выверены по официальному перечню параметров автозагрузки
 // (раздел «Параметры и правила их заполнения», ветка «Автосервис», 24.09.2026) и по
-// отчёту автозагрузки от 20.09.2026 (xlsx из кабинета).
+// отчётам автозагрузки от 20.09 и 24.09.2026 (xlsx из кабинета).
 //
 // Обязательные сверх общих в этой ветке: ServiceType, ServiceSubtype,
 // AutoserviceServiceType, CarServiceType, CarServiceVehicleType, Make,
@@ -12,9 +12,13 @@
 //
 // Важное отличие от старого образца: ServiceSubtype = «Автосервисы для автомобилей»
 // (единственное допустимое значение по перечню); «Автосервис» из примера в образце
-// — устаревшее. PriceList отключён: ServiceName должен браться из справочника
-// площадки, а значение «Своя услуга» в категории «Автосервис» не поддерживается —
-// выдуманные названия услуг сломали бы объявление целиком.
+// — устаревшее (справочник шаблона 66870 допускает только «Автосервисы для …»).
+//
+// PriceList обязателен: отчёт 24.09 вернул «Неправильно заполнен обязательный
+// параметр — Услуги (ServiceName)» и сам назвал допустимое значение —
+// «Тюнинг и оборудование». Названия услуг берутся ТОЛЬКО из справочника площадки
+// («Своя услуга» в автосервисе не поддерживается), поэтому прайс-лист собирается
+// автоматически из AutoserviceServiceType, а не из выдуманных названий.
 //
 // Пустые обязательные поля не выдумываем: validate() их называет, а /feed/avito.xml
 // до устранения замечаний отвечает 503 — Авито не подхватит мусор.
@@ -42,6 +46,9 @@ const ENUM = {
   guarantee: ['Есть', 'Нет'],
   controlRepairProcess: ['Есть', 'Нет'],
   contactMethod: ['По телефону и в сообщениях', 'По телефону'],
+  // ServiceName прайс-листа в ветке «Автосервис» — из справочника площадки;
+  // допустимое значение подсказал сам Авито в отчёте об ошибке 24.09.2026
+  serviceName: ['Тюнинг и оборудование'],
 };
 const PRICE_TYPES = ['за услугу', 'за час', 'за единицу', 'за день', 'за месяц', 'за минуту',
   'за км', 'за м²', 'за м²/сутки', 'за заказ', 'за единицу/сутки', 'за нормо-час'];
@@ -57,6 +64,14 @@ const opts = (n, arr) => (arr && arr.length ? `<${n}>${arr.map((o) => `<Option>$
 function load(file = CONFIG) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
 
 const live = (cfg) => (cfg.ads || []).filter((a) => !a.draft);
+// Прайс-лист: если явного нет — одна позиция с названием из справочника
+// (AutoserviceServiceType) и ценой объявления как начальной («цена от»).
+const priceList = (cfg, a) => {
+  if (a.priceList && a.priceList.length) return a.priceList;
+  const d = merged(cfg, a);
+  const name = d.autoserviceServiceType || 'Тюнинг и оборудование';
+  return a.price ? [{ name, price: a.price, from: true, type: 'за услугу' }] : [];
+};
 const merged = (cfg, a) => ({ ...(cfg.studio || {}).defaults, ...a });
 
 // Требования к названию (правила Авито, раздел «Качество объявления»):
@@ -109,11 +124,13 @@ function validate(cfg) {
     if (/https?:\/\//i.test(a.description || '')) bad.push(`${w}: в описании ссылка — правилами запрещена`);
     if (/(\+7|\b8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/.test(a.description || '')) bad.push(`${w}: в описании телефон — правилами запрещён`);
     if (/[\w.-]+@[\w.-]+\.[a-z]{2,}/i.test(a.description || '')) bad.push(`${w}: в описании адрес почты — правилами запрещён`);
-    const pl = a.priceList || [];
+    const pl = priceList(cfg, a);
+    if (!pl.length) bad.push(`${w}: пустой прайс-лист — ServiceName обязателен в ветке «Автосервис»`);
     if (pl.length > MAX_PRICELIST) bad.push(`${w}: в прайс-листе больше ${MAX_PRICELIST} услуг`);
     pl.forEach((p, j) => {
       if (!p.name) bad.push(`${w}: прайс-лист, позиция ${j + 1}: нет названия услуги`);
       if (p.name === 'Своя услуга') bad.push(`${w}: прайс-лист: «Своя услуга» в категории «Автосервис» не поддерживается`);
+      else if (p.name && !ENUM.serviceName.includes(p.name)) bad.push(`${w}: прайс-лист: ServiceName="${p.name}" — нет в справочнике Авито (${ENUM.serviceName.join(' / ')})`);
       if (!Number.isInteger(Number(p.price)) || Number(p.price) <= 0) bad.push(`${w}: прайс-лист «${p.name}»: цена должна быть целым числом рублей`);
       if (p.type && !PRICE_TYPES.includes(p.type)) bad.push(`${w}: прайс-лист «${p.name}»: тип стоимости «${p.type}» — нет в справочнике`);
     });
@@ -140,7 +157,7 @@ function adXml(a, s, cfg) {
   const d = merged(cfg, a);
   const imgs = (a.images || []).slice(0, MAX_IMAGES)
     .map((f) => `<Image url="${esc(/^https?:/.test(f) ? f : s.imageBase.replace(/\/$/, '') + '/' + f)}"/>`).join('');
-  const prices = (a.priceList || []).slice(0, MAX_PRICELIST)
+  const prices = priceList(cfg, a).slice(0, MAX_PRICELIST)
     .map((p) => `<Service>${tag('ServiceName', p.name)}${tag('ServicePrice', p.price)}${p.from ? '<ServiceStartingPrice>Да</ServiceStartingPrice>' : ''}${tag('ServicePriceType', p.type || 'за услугу')}</Service>`).join('');
   return `<Ad>${tag('Id', a.id)}${tag('Address', s.address)}<Category>Предложение услуг</Category>` +
     `${tag('ServiceType', d.serviceType || 'Автосервис, аренда')}${tag('ServiceSubtype', d.serviceSubtype || 'Автосервисы для автомобилей')}` +
