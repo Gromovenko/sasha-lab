@@ -11,6 +11,7 @@
 //   node harvest/run.js probe [--hosts a,b]     — замер безопасной скорости источников
 //   node harvest/run.js facts [--limit 500]     — разбор скачанного в факты
 //   node harvest/run.js links [--check N] [--csv файл] — база авто со ссылками на все ресурсы
+//   node harvest/run.js catalog [--csv файл]    — карточка машины: стекло/корпус/рамка, разбор, герметик
 //   node harvest/run.js stats                   — что накоплено
 //
 // Сбор идёт медленно НАМЕРЕННО (пауза на источник, потолок страниц за заход):
@@ -27,6 +28,7 @@ const tg = require('./telegram');
 const db = require('../seo/lib/db');
 const http = require('./http');
 const links = require('./links');
+const catalog = require('./catalog');
 
 const HELP = `
 sasha-lab · сбор базы знаний
@@ -40,6 +42,8 @@ sasha-lab · сбор базы знаний
   facts --reparse            пересчитать черновые факты с нуля (после правки правил)
   links [--csv файл]         пересобрать «машина → ссылки на все ресурсы»; --csv выгружает таблицу
   links --check N            проверить живость N давно не проверявшихся ссылок
+  catalog [--csv файл] [--all]  карточка машины: наличие стекла/корпуса/переходной рамки,
+                             сложность разбора и заводской герметик (--all — включая пустые)
   stats                      что накоплено
 
 Окружение: SASHALAB_PG_URL (без неё сбор пишет NDJSON в .harvest-out и говорит об этом).
@@ -152,6 +156,19 @@ async function main() {
       if (out) {
         require('fs').writeFileSync(out, '\ufeff' + links.toCsv(await links.exportRows()));
         console.log(`  таблица: ${out}`);
+      }
+      break;
+    }
+    case 'catalog': {
+      const r = await catalog.rebuild();
+      console.log(`  связей машина→деталь ${r.rows} по ${r.cars} машинам из ${r.vehicles}`);
+      console.log(`  стекло фары ${r.glass}, корпус фары ${r.housing}, переходная рамка ${r.adapter},`
+        + ` факты о разборе ${r.teardown}, заводской герметик ${r.sealant}`);
+      const out = flag('csv');
+      if (out) {
+        const rows = await catalog.exportRows({ onlyWithData: !argv.includes('--all') });
+        require('fs').writeFileSync(out, '\ufeff' + catalog.toCsv(rows));
+        console.log(`  таблица: ${out} (строк ${rows.length})`);
       }
       break;
     }

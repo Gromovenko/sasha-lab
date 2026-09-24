@@ -322,3 +322,24 @@ test('sources: исчерпанные источники выключены, н�
     assert.notEqual(SOURCES.find((s) => s.host === host).enabled, false, `${host} остался в заходе`);
   }
 });
+
+// ── карточка машины: стекло, корпус, переходная рамка, разбор, герметик ────
+// Сторожит два правила, которые тихо ломают всю карточку: «корпус фары» до этого
+// уезжал в линзы (общее правило /линз|модул/), а бутил не отличался от битума —
+// а для мастера это и есть ответ «греть или не греть».
+test('виды деталей: корпус фары, стекло, переходная рамка', () => {
+  assert.equal(facts.kindOf('Корпус фары правый Toyota Camry 70 под линзы'), 'housing');
+  assert.equal(facts.kindOf('Блок-фара в сборе Kia Rio 4'), 'housing');
+  assert.equal(facts.kindOf('Стекло фары Haval Jolion левое'), 'glass');
+  assert.equal(facts.kindOf('Переходные рамки для би-лед модулей Kia Rio 4'), 'adapter');
+  assert.equal(facts.kindOf('Линзы Aozoom A3+ 3 дюйма'), 'lens');
+});
+
+test('герметик: бутил отличается от полиуретана и не путается с битумом', () => {
+  const seal = (text) => facts.parseDoc({
+    title: 'Haval Jolion', text: `${text} Поставили линзы Aozoom A3+.`, meta: { kind: 'works' },
+  }).fitment[0].sealant;
+  assert.equal(seal('Фара Haval Jolion собрана на бутиловом герметике, греется феном.'), 'бутиловый герметик');
+  assert.equal(seal('Headlight on butyl sealant, bake at 110C. Haval Jolion.'), 'бутиловый герметик');
+  assert.equal(seal('Haval Jolion: фара на полиуретановом герметике, не разбирается.'), 'полиуретановый герметик');
+});
