@@ -265,9 +265,27 @@ async function route(req, res) {
   }
   if (p === '/api/lead') {
     if (req.method !== 'POST') return send(405, 'только POST'), true;
-    if (!db.enabled) return send(503, shell('Заявка', '<h1>Приём заявок выключен</h1><p class="sub">Нет хранилища (SASHALAB_PG_URL).</p>')), true;
+    const wantsJson = (req.headers.accept || '').includes('application/json');
+    const leadError = (code, message) => send(code, wantsJson
+      ? JSON.stringify({ ok: false, message })
+      : shell('Заявка', `<h1>Заявка не отправлена</h1><p>${esc(message)}</p><p><a href="/faroeb#contact">Вернуться к форме</a></p>`),
+      wantsJson ? { 'Content-Type': 'application/json; charset=utf-8' } : {});
+    if (!db.enabled) return leadError(503, 'Приём заявок временно недоступен. Позвоните: +7 909 888-75-75.'), true;
     const { fields, files: got } = await form(req);
-    const text = String(fields.text || '').slice(0, 4000);
+    if (fields.source === 'faroeb') {
+      const phone = String(fields.contact || '').trim();
+      const digits = phone.replace(/\D/g, '');
+      const services = ['Установка Bi-LED линз', 'Полировка фар', 'Бронирование фар', 'Ремонт фар'];
+      if (!String(fields.name || '').trim() || String(fields.name).length > 100 ||
+          !/^[+\d\s()-]+$/.test(phone) || digits.length < 10 || digits.length > 15 ||
+          fields.consent !== 'yes' || !services.includes(fields.service)) {
+        return leadError(400, 'Укажите имя, телефон, услугу и согласие на обработку персональных данных.'), true;
+      }
+      fields.pack = 'avtosvet';
+    }
+    const text = (fields.source === 'faroeb'
+      ? `Заявка с /faroeb. Услуга: ${fields.service}.\n${String(fields.text || '').slice(0, 3500)}\nСогласие на обработку персональных данных: получено.`
+      : String(fields.text || '')).slice(0, 4000);
     const subject = {};
     for (const [k, v] of Object.entries(fields)) if (k.startsWith('subject.') && v) subject[k.slice(8)] = v;
     const pack = fields.pack || packs.DEFAULT_ID;
@@ -287,6 +305,7 @@ async function route(req, res) {
     adminClients.ensureForDeal(deal).catch(() => null);
     log.info({ area: 'crm', action: 'lead.new', actor: fields.contact || null, entity: 'deal', entityId: deal.id,
       message: text.slice(0, 200), ...log.web(req) }).catch(() => null);
+    if (wantsJson) return send(201, JSON.stringify({ ok: true }), { 'Content-Type': 'application/json; charset=utf-8' }), true;
     return send(302, '', { Location: '/zayavka/?ok=1' }), true;
   }
 
