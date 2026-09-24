@@ -10,7 +10,7 @@
 Извлечённый текст лежит вне git: `/root/gromovenko/avito-legal/txt/`, оглавление —
 `titles.tsv`. После добора через ранние снимки архива нечитаемыми остались только служебные
 и чужие страницы: `rules/delivery`, `rules/certificate`, `rules/user-requests`,
-`rules/avito-id`, `rules/bankid`, `rules/talent-pool-policy`, `rules/data-policy`,
+`rules/bankid`, `rules/talent-pool-policy`, `rules/data-policy`,
 `rules/safe-deal` (снимок — редирект, содержание дублируется в
 `paid_services/deal-delivery`), `rules/listings/protected_number` (есть дубль
 `rules/protectednumber`), `auto/leasing-offer`, `job/cv-contacts`,
@@ -276,7 +276,7 @@
 ---|---|---
 `_request` | Авито — Объявления на сайте Авито ⚠ | 791
 `auto` | Правила в транспорте | 3536
-`auto_autoteka-promocodes` | Авито — Объявления на сайте Авито | 8110
+`auto_autoteka-promocodes` | Авито — Объявления на сайте Авито | 8107
 `auto_car-auction` | Авито Аукцион | 10653
 `auto_car-booking` | Авито Селект | 6927
 `auto_car-rental` | Бронирования авто в аренду | 11784
@@ -287,24 +287,24 @@
 `auto_select` | Авито — Объявления на сайте Авито | 4297
 `auto_target_loans` | Авито — Объявления на сайте Авито | 31783
 `auto_transport-listings` | Авито — Объявления на сайте Авито | 24904
-`auto_verified_cars` | Проверенные авто частных пользователей | 20218
+`auto_verified_cars` | Проверенные авто частных пользователей | 20215
 `contacts` | contacts | 7538
 `goods` | Правила в товарах ⚠ | 1399
 `goods_auth4` | Авито — Объявления на сайте Авито ⚠ | 287
 `goods_delivery` | Доставка | 111632
-`goods_delivery-buyers` | Авито — Объявления на сайте Авито | 102761
+`goods_delivery-buyers` | Авито — Объявления на сайте Авито | 102755
 `goods_delivery-for-professional-sellers` | Доставка для профессиональных продавцов | 159005
-`goods_delivery-for-pvz` | Оферта для ПВЗ | 172661
+`goods_delivery-for-pvz` | Оферта для ПВЗ | 172658
 `goods_delivery-payments` | Авито — Объявления на сайте Авито ⚠ | 250
 `goods_delivery.` | Ошибка 404. Страница не найдена ⚠ | 363
-`goods_fashion-authentication` | Подлинность товара | 19347
+`goods_fashion-authentication` | Подлинность товара | 19344
 `goods_purchase-from-professional-sellers` | Покупка с доставкой у профессиональных продавцов | 100452
 `goods_tariff-delivery-for-professional-sellers` | Сделка с Авито Доставкой для бизнеса | 43959
 `index` | Правила Авито | 3054
 `job` | Правила в работе ⚠ | 1211
 `job_chat-bot-for-vacancies` | Авито — Объявления на сайте Авито | 9885
 `job_cv-contacts` | Wayback Machine ⚠ | 516
-`job_gig_marketing-offer` | Маркетинговая оферта "Авито Подработка" | 24931
+`job_gig_marketing-offer` | Маркетинговая оферта "Авито Подработка" | 24928
 `job_job-listings` | Работа | 21562
 `personal_data_protection` | Защита данных | 1861
 `pro_tools_autoload` | Автозагрузка | 5860
@@ -327,20 +327,20 @@
 `realty_rules_real-estate-listings` | Авито — Объявления на сайте Авито | 24887
 `realty_rules_services_for_real_deal` | Авито — Объявления на сайте Авито | 41627
 `rules_ad_placing_ads-policy` | Содержание рекламы | 8679
-`rules_ad_placing_new-ads-labeling-agreement-v1` | Авито — Объявления на сайте Авито | 8703
-`rules_ad_placing_new-ads-labeling-agreement-v2` | Соглашение о маркировке и учёте интернет-рекламы | 11796
-`rules_ad_placing_personal_data` | Авито — Объявления на сайте Авито | 9768
+`rules_ad_placing_new-ads-labeling-agreement-v1` | Авито — Объявления на сайте Авито | 8700
+`rules_ad_placing_new-ads-labeling-agreement-v2` | Соглашение о маркировке и учёте интернет-рекламы | 11793
+`rules_ad_placing_personal_data` | Авито — Объявления на сайте Авито | 9765
 `rules_ad_placing_prohibited-ads` | Запрещенная реклама | 5313
-`rules_ai-assistant` | Авито — Объявления на сайте Авито | 13014
-`rules_assistant_avito` | Условия использования Ассистента Авито | 6534
+`rules_ai-assistant` | Авито — Объявления на сайте Авито | 13011
+`rules_assistant_avito` | Условия использования Ассистента Авито | 6531
 `rules_autoteka-avito` | Авито — Объявления на сайте Авито | 15705
-`rules_avito-id` | Wayback Machine ⚠ | 486
+`rules_avito-id` | Авито ID | 8158
 `rules_avito_ads_api_terms` | Условия использования API сервиса Авито Реклама | 8602
 `rules_avito_ads_general_legal_requirements` | Общие требования к рекламе | 6566
-`rules_avito_ads_offer` | Оферта на оказание рекламных услуг | 30043
+`rules_avito_ads_offer` | Оферта на оказание рекламных услуг | 30040
 `rules_avito_ads_prohibited_ads` | Товары и услуги, реклама которых не допускается | 8820
 `rules_avito_ads_special_legal_requirements` | Требования к отдельным видам рекламы | 54587
-`rules_avito_ads_terms_of_use` | Авито — Объявления на сайте Авито ⚠ | 176
+`rules_avito_ads_terms_of_use` | Условия использования сервиса Авито Реклама | 9482
 `rules_bankid` | Банковские ID ⚠ | 655
 `rules_candidates-privacy-policy` | Политика обработки данных кандидатов Авито | 24138
 `rules_certificate` | Доступ ограничен: проблема с IP ⚠ | 816
@@ -354,46 +354,46 @@
 `rules_listings_listing-policy` | Размещение объявлений | 38003
 `rules_listings_paid-listing` | Платное размещение | 10366
 `rules_listings_prohibited-items` | Запрещенные объявления | 28968
-`rules_listings_protected_number` | HTTP 503 ⚠ | 312
+`rules_listings_protected_number` | Защищенный номер | 8163
 `rules_listings_tariff` | Тариф | 35417
 `rules_listings_telephone_restriction` | Авито — Объявления на сайте Авито ⚠ | 787
 `rules_mobile-agreement` | Авито — Объявления на сайте Авито | 17163
 `rules_paid_services_contact-request` | Запрос контактов | 19261
-`rules_paid_services_cost-per-action` | Правила получения и оплаты целевых действий | 68329
+`rules_paid_services_cost-per-action` | Правила получения и оплаты целевых действий | 68326
 `rules_paid_services_deal-delivery` | Сделка с Авито Доставкой | 12951
 `rules_paid_services_goods-promotion-fee` | Продвижение за комиссию в Авито Доставке | 2231
-`rules_paid_services_item-promotion` | Продвижение объявлений | 28857
+`rules_paid_services_item-promotion` | Продвижение объявлений | 28854
 `rules_paid_services_profile-ad` | Реклама профиля | 13002
 `rules_paid_services_profile-views` | Просмотры профиля | 9726
-`rules_paid_services_profplan` | Профессиональный план | 14092
+`rules_paid_services_profplan` | Профессиональный план | 14089
 `rules_paid_services_promotion-fee` | Продвижение за комиссию ⚠ | 820
-`rules_paid_services_promotion-fee-private` | Авито — Объявления на сайте Авито | 12826
-`rules_paid_services_quick-start` | Условия сервиса «Быстрый старт» | 16331
-`rules_paid_services_subscription` | Подписка (набор услуг) | 6843
+`rules_paid_services_promotion-fee-private` | Авито — Объявления на сайте Авито | 12823
+`rules_paid_services_quick-start` | Условия сервиса «Быстрый старт» | 16328
+`rules_paid_services_subscription` | Подписка (набор услуг) | 6840
 `rules_paid_services_tariff` | Тариф | 33733
-`rules_paid_services_temporarypresence` | Временное присутствие | 8670
+`rules_paid_services_temporarypresence` | Временное присутствие | 8667
 `rules_partners` | Партнеры | 3203
-`rules_privacy-policy` | Авито — Объявления на сайте Авито | 34130
+`rules_privacy-policy` | Авито — Объявления на сайте Авито | 34127
 `rules_privacy-policy1.3` | Ошибка 404. Страница не найдена ⚠ | 373
 `rules_prohibited-items` | Ошибка 404. Страница не найдена ⚠ | 363
 `rules_promotion_on_avito_cost-per-action` | Авито — Объявления на сайте Авито ⚠ | 0
 `rules_promotion_on_avito_deal-delivery` | Авито — Объявления на сайте Авито ⚠ | 112
 `rules_promotion_on_avito_item-promotion` | Авито — Объявления на сайте Авито ⚠ | 0
 `rules_promotion_on_avito_tariff` | Авито — Объявления на сайте Авито ⚠ | 287
-`rules_protectednumber` | Авито — Объявления на сайте Авито | 8495
+`rules_protectednumber` | Авито — Объявления на сайте Авито | 8492
 `rules_ranking-ads` | Ранжирование объявлений | 9662
 `rules_rec-technologies` | Рекомендательные технологии | 9707
-`rules_relations_management` | Авито — Объявления на сайте Авито | 8840
+`rules_relations_management` | Авито — Объявления на сайте Авито | 8837
 `rules_repsys` | Уровень сервиса | 8824
 `rules_safe-deal` | Безопасная сделка ⚠ | 323
 `rules_services-agreement` | Оферта Авито | 26977
-`rules_talent-pool-policy` | Политика о кадровом резерве группы компаний Авито ⚠ | 176
+`rules_talent-pool-policy` | Политика о кадровом резерве группы компаний Авито | 14441
 `rules_terms-of-use` | Условия использования Авито | 61392
-`rules_user-requests` | Доступ временно заблокирован ⚠ | 791
+`rules_user-requests` | Обращения пользователей | 7037
 `rules_wallet` | Кошелек Авито | 24208
 `services` | Правила в услугах ⚠ | 871
 `services_booking-car` | Онлайн-бронирование автомобиля | 71191
-`services_booking-car-private` | Авито — Объявления на сайте Авито | 78258
+`services_booking-car-private` | Авито — Объявления на сайте Авито | 78255
 `services_booking-car-professional` | Авито — Объявления на сайте Авито | 77655
 `services_online-appointment-calendar` | Онлайн-записи | 11471
 `services_profile_requirements` | Правила заполнения профиля | 4473
