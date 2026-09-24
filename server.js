@@ -42,6 +42,7 @@ const TYPES = {
 
 function resolve(urlPath) {
   let p = decodeURIComponent(urlPath.split('?')[0].split('#')[0]);
+  if (p === '/faroeb') p = '/faroeb/index.html';
   if (p.endsWith('/')) p += 'index.html';
   // ассеты берём от корня зеркала, страницы — из каталога сайта
   // /baza и sitemap базы знаний — из dist, ассеты — от корня зеркала, остальное — страницы сайта
