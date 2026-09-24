@@ -148,16 +148,23 @@ const SOURCES = [
     seeds: ['https://www.autooptica.ru/'], include: /./, delayMs: 1000, maxPages: 1000 },
   { host: 'ledtechbeams.ru', kind: 'parts', title: 'LedTechBeams',
     seeds: ['https://ledtechbeams.ru/'], include: /./, delayMs: 1000, maxPages: 100 },
+  // Потолок 10 100 по замеру карты 24.09.2026 (9 901 уникальный адрес, robots
+  // не режет ни одного). До этого стояло 300 — цифра «на глаз» при заведении
+  // источника, из-за неё сайт отдал 598 страниц и считался «недобранным».
   { host: 'svetodiod96.ru', kind: 'parts', title: 'Svetodiod96',
-    seeds: ['https://svetodiod96.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+    seeds: ['https://svetodiod96.ru/'], include: /./, delayMs: 1000, maxPages: 10100 },
   { host: 'remoptika.ru', kind: 'works', title: 'Remoptika',
     seeds: ['https://remoptika.ru/'], include: /./, delayMs: 1000, maxPages: 9500 },
   { host: 'autolight24.ru', kind: 'works', title: 'Autolight24',
     seeds: ['https://autolight24.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
   { host: 'ledstudio.org', kind: 'parts', title: 'LedStudio',
     seeds: ['https://ledstudio.org/'], include: /./, delayMs: 1000, maxPages: 950 },
+  // Потолок 19 000 по замеру карты 24.09.2026: в карте 29 196 записей, но
+  // уникальных адресов 18 633 — площадка печатает один товар в нескольких
+  // дочерних картах. Прежние 300 были моей оценкой при заведении, не пределом
+  // сайта: это крупнейший непрочитанный пласт во всём проекте.
   { host: 'daoptika.ru', kind: 'works', title: 'DAoptika',
-    seeds: ['https://daoptika.ru/'], include: /./, delayMs: 1000, maxPages: 300 },
+    seeds: ['https://daoptika.ru/'], include: /./, delayMs: 1000, maxPages: 19000 },
   { host: 'parafara.ru', kind: 'works', title: 'Parafara',
     seeds: ['https://parafara.ru/'], include: /./, delayMs: 1000, maxPages: 400 },
   { host: '1st-garage.ru', kind: 'works', title: '1st Garage',
@@ -324,6 +331,12 @@ const EXHAUSTED = {
   'autolight24.ru': 'карта 7, в базе 7',
   'far-master.com': 'карта 4, в базе 4',
   'autosvet76.ru': 'карта 1, в базе 1',
+  // Не дефект сбора, как я записал 24.09 в отчёте: сайт — одностраничный лендинг
+  // 2020 года. Карты сайта нет (404), robots открыт, главная отдаёт 200, но все
+  // её внутренние ссылки — анкоры одной и той же страницы (#services, #works,
+  // #contacts); отдельных страниц на площадке нет вовсе. Один документ в базе —
+  // это и есть весь сайт.
+  'lampauto.by': 'одностраничный лендинг: карты нет, внутренних ссылок нет, в базе 1 (вся площадка)',
 };
 
 for (const s of SOURCES) {
