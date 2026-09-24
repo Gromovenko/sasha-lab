@@ -181,8 +181,11 @@ const SOURCES = [
     seeds: ['https://lampauto.by/'], include: /./, delayMs: 1000, maxPages: 500 },
   { host: 'led-auto.ru', kind: 'parts', title: 'LedAuto',
     seeds: ['https://led-auto.ru/'], include: /./, delayMs: 1000, maxPages: 500 },
+  // Карты сайта нет — идём обходом по ссылкам, и заход 20.09 встал ровно на
+  // потолке 400, то есть сайт оборван не собой, а нашим числом. Потолок поднят
+  // до 2000: ниже этого «собрано = потолок» ничего не говорит о самом сайте.
   { host: 'xenonru.ru', kind: 'works', title: 'XenonRu',
-    seeds: ['http://xenonru.ru/'], include: /./, delayMs: 1000, maxPages: 400 },
+    seeds: ['http://xenonru.ru/'], include: /./, delayMs: 1000, maxPages: 2000 },
   { host: 'fara-russia.ru', kind: 'works', title: 'Fara Russia',
     seeds: ['https://fara-russia.ru/'], include: /./, delayMs: 20000, maxPages: 300 },
 
