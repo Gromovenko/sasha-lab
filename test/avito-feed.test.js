@@ -14,6 +14,7 @@ const base = () => ({
     defaults: {
       guarantee: 'Есть', workExperience: 5, ownSpareParts: 'Можно',
       carServiceType: 'Сервисный центр', vehicleType: 'Легковые авто', make: ['BMW'],
+      serviceSubtype: 'Автосервисы для автомобилей',
     },
   },
   ads: [{ id: 'a1', title: 'Установка би-лед линз в фары', price: 18000, images: ['1.jpg'], description: 'о'.repeat(200) }],
@@ -27,6 +28,47 @@ test('полный фид проходит проверку и содержит 
     assert.ok(xml.includes(`<${t}>`), `нет ${t}`);
   }
   assert.ok(xml.includes('<ServiceType>Автосервис, аренда</ServiceType>'));
+  // единственное допустимое значение по перечню параметров; «Автосервис» — устаревший пример
+  assert.ok(xml.includes('<ServiceSubtype>Автосервисы для автомобилей</ServiceSubtype>'));
+});
+
+test('значения вне справочника не проходят проверку', () => {
+  for (const [field, value] of [['serviceSubtype', 'Автосервис'], ['carServiceType', 'Мастерская'],
+    ['vehicleType', 'Мотоциклы'], ['guarantee', 'Да'], ['ownSpareParts', 'Да']]) {
+    const cfg = base();
+    cfg.studio.defaults[field] = value;
+    assert.ok(feed.validate(cfg).some((p) => p.includes(field)), `${field}=${value} должно ловиться`);
+  }
+});
+
+test('способ связи и лимиты длин проверяются', () => {
+  const cfg = base();
+  cfg.studio.contactMethod = 'В сообщениях';
+  assert.ok(feed.validate(cfg).some((p) => p.includes('contactMethod')));
+  const cfg2 = base();
+  cfg2.studio.contactMethod = 'По телефону и в сообщениях';
+  assert.deepStrictEqual(feed.validate(cfg2), []);
+  assert.ok(feed.build(cfg2).includes('<ContactMethod>По телефону и в сообщениях</ContactMethod>'));
+  const cfg3 = base();
+  cfg3.ads[0].description = 'о'.repeat(7501);
+  assert.ok(feed.validate(cfg3).some((p) => p.includes('7500')));
+  const cfg4 = base();
+  cfg4.ads[0].id = 'плохой#id';
+  assert.ok(feed.validate(cfg4).some((p) => p.includes('недопустимые символы')));
+});
+
+test('прайс-лист: «Своя услуга» и чужой тип стоимости не проходят', () => {
+  const cfg = base();
+  cfg.ads[0].priceList = [{ name: 'Своя услуга', price: 100 }];
+  assert.ok(feed.validate(cfg).some((p) => p.includes('Своя услуга')));
+  const cfg2 = base();
+  cfg2.ads[0].priceList = [{ name: 'Полировка фар', price: 100, type: 'за фару' }];
+  assert.ok(feed.validate(cfg2).some((p) => p.includes('тип стоимости')));
+});
+
+test('в боевом фиде прайс-листа нет — названия услуг только из справочника Авито', () => {
+  const xml = feed.build(feed.load());
+  assert.ok(!xml.includes('<PriceList>'));
 });
 
 test('каждый обязательный параметр по отдельности валит проверку', () => {
