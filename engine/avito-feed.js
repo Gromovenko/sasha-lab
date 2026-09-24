@@ -53,6 +53,12 @@ function validate(cfg) {
     titleProblems(a.title).forEach((p) => bad.push(`${w}: ${p}`));
     if (!a.description || a.description.length < 200) bad.push(`${w}: описание короче 200 знаков`);
     if (/https?:\/\//i.test(a.description || '')) bad.push(`${w}: в описании ссылка — правилами запрещена`);
+    if (/(\+7|\b8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/.test(a.description || '')) bad.push(`${w}: в описании телефон — правилами запрещён`);
+    if (/[\w.-]+@[\w.-]+\.[a-z]{2,}/i.test(a.description || '')) bad.push(`${w}: в описании адрес почты — правилами запрещён`);
+    (a.priceList || []).forEach((s2, j) => {
+      if (!s2.name) bad.push(`${w}: прайс-лист, позиция ${j + 1}: нет названия услуги`);
+      if (!Number.isInteger(Number(s2.price)) || Number(s2.price) <= 0) bad.push(`${w}: прайс-лист «${s2.name}»: цена должна быть целым числом рублей`);
+    });
     if (!Number.isInteger(Number(a.price)) || Number(a.price) <= 0) bad.push(`${w}: цена должна быть целым числом рублей`);
     if (!a.images || !a.images.length) bad.push(`${w}: нет фото`);
     else if (a.images.length > MAX_IMAGES) bad.push(`${w}: больше ${MAX_IMAGES} фото`);
