@@ -76,7 +76,7 @@
  }
  function spots(rows){
   return '<div class="g3" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">'+rows.map(function(r){
-   return '<div class="gc"><b>'+esc(r.label)+'</b>'+(r.socks&&r.socks.length?'<div>'+(r.typical?'Возможные цоколи: ':'Цоколи: ')+'<b>'+r.socks.map(esc).join(', ')+'</b></div>':'')+r.list.map(function(l){
+   return '<div class="gc"><b>'+esc(r.label)+'</b>'+(r.socks&&r.socks.length?'<div>'+'Цоколи: '+'<b>'+r.socks.map(esc).join(', ')+'</b></div>':'')+r.list.map(function(l){
     return '<div class="src"><a href="'+esc(l.url)+'" target="_blank" rel="noopener noreferrer">'+esc(l.host)+'</a></div>';
    }).join('')+'</div>';}).join('')+'</div>';
  }

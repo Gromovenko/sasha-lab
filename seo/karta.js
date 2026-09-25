@@ -136,14 +136,6 @@ const LAMP_SPOTS = [
   ['Противотуманные (зад)', /^Задние противотуман/i], ['Задний ход', /^(Задний ход|Лампа заднего)/i],
   ['Подсветка номера', /^Подсветка номера/i],
 ];
-// Типовые цоколи по месту установки — показываются, когда в названиях товаров цоколь не указан
-const TYPICAL_SOCKETS = {
-  'Ближний свет': ['H1', 'H4', 'H7', 'H11', 'HB3', 'HB4', 'D1S', 'D2S', 'D3S'], 'Дальний свет': ['H1', 'H4', 'H7', 'H9', 'HB3'],
-  'Противотуманные (перед)': ['H1', 'H3', 'H8', 'H11', 'HB4'], 'ДХО': ['P21W', 'W21W', 'H15', 'H21W'],
-  'Передние габариты': ['W5W', 'T10'], 'Передние поворотники': ['PY21W', 'WY21W', 'W21W'], 'Боковые поворотники': ['WY5W', 'W5W'],
-  'Стоп-сигнал': ['P21/5W', 'P21W', 'W21/5W'], 'Доп. стоп-сигнал': ['W5W', 'W16W', 'T10'], 'Задние габариты': ['W5W', 'P21/5W'],
-  'Задние поворотники': ['PY21W', 'P21W'], 'Противотуманные (зад)': ['P21W', 'W21W'], 'Задний ход': ['P21W', 'W16W'], 'Подсветка номера': ['W5W', 'C5W'],
-};
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'источник'; } };
 // Короткий заголовок: без рекламного хвоста («• Купить…», «| сайт», «: артикул…»), до 46 знаков.
 const short = (t, n = 46) => {
@@ -209,7 +201,7 @@ async function sources(ids) {
     });
     const top = perHost(list).slice(0, 2);
     const found = [...new Set(list.map((x) => x.sock).filter(Boolean))];
-    if (top.length || found.length) bulbRows.push({ label, list: top, socks: found.length ? found : TYPICAL_SOCKETS[label] || [], typical: !found.length });
+    if (top.length || found.length) bulbRows.push({ label, list: top, socks: found });
   }
   return {
     glassCols, housingCols, bulbRows,
