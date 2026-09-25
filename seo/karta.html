@@ -75,7 +75,10 @@
   return h;
  }
  function spots(rows){
-  return '<table class="sp">'+rows.map(function(r){return '<tr><td class="l" style="white-space:nowrap;padding-right:14px"><b>'+esc(r.label)+'</b></td><td>'+links(r.list)+'</td></tr>';}).join('')+'</table>';
+  return '<div class="g3" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">'+rows.map(function(r){
+   return '<div class="gc"><b>'+esc(r.label)+'</b>'+r.list.map(function(l){
+    return (l.sock?'<div><b>'+esc(l.sock)+'</b></div>':'')+'<div class="src"><a href="'+esc(l.url)+'" target="_blank" rel="noopener noreferrer">'+esc(l.host)+'</a></div>';
+   }).join('')+'</div>';}).join('')+'</div>';
  }
  // карточка одна; строки только с данными, у каждой — список ссылок на источники
  function card(c,yr){

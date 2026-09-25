@@ -196,7 +196,7 @@ async function sources(ids) {
   for (const [label, re] of LAMP_SPOTS) {
     const list = bulbAll.filter((r) => re.test(String(r.name).replace(/^.*? в (?=[А-ЯЁ])/, '')) && / в [А-ЯЁ]/.test(r.name)).map((r) => {
       const sock = (String(r.name).match(/\b(HB[34]|H1[13]|H[134789]|D[1-4][SR]|P?W?21(?:\/5)?W|W5W|T10|T20)\b/i) || [])[1];
-      return { url: r.url, host: hostOf(r.url),
+      return { url: r.url, host: hostOf(r.url), sock: sock ? sock.toUpperCase() : '',
         title: (sock ? sock.toUpperCase() + ' · ' : '') + (/^Светодиодн/i.test(r.name) ? 'LED · ' : '') + short(r.name.replace(/^.*? для\s+/i, '').replace(/\s+в\s+[А-ЯЁ].*$/, ''), 40) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : '') };
     });
     const top = perHost(list).slice(0, 2);
