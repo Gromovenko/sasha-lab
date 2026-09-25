@@ -161,7 +161,19 @@ async function sources(ids) {
     }));
   const fl = (pred) => uniq(facts.filter(pred)).slice(0, PER_ITEM)
     .map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) }));
+  // стекло: левое / правое отдельно; по одному предложению на сайт, не больше 5
+  const side = (n) => {
+    const l = /лев|\bLH\b|\(L\)/i.test(n), r = /прав|\bRH\b|\(R\)/i.test(n);
+    return l && !r ? 'left' : r && !l ? 'right' : 'other';
+  };
+  const perHost = (list) => { const seen = new Set(); return list.filter((x) => !seen.has(x.host) && seen.add(x.host)).slice(0, PER_ITEM); };
+  const gl = uniq(parts.filter((r) => r.kind === 'glass')).map((r) => ({
+    url: r.url, host: hostOf(r.url), side: side(r.name),
+    title: short(r.name) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : ''),
+  }));
+  const glassCols = { left: perHost(gl.filter((x) => x.side === 'left')), right: perHost(gl.filter((x) => x.side === 'right')), other: perHost(gl.filter((x) => x.side === 'other')) };
   return {
+    glassCols,
     shop: uniq(shop).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
     glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter'),
     teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
@@ -180,7 +192,7 @@ async function sources(ids) {
 function buildItems(c, src) {
   const items = [];
   const rub = (n) => Number(n).toLocaleString('ru-RU') + ' ₽';
-  const add = (n, label, value, links) => { if (value) items.push({ n, label, value, links: links || [] }); };
+  const add = (n, label, value, links, cols) => { if (value) items.push({ n, label, value, links: links || [], cols }); };
   const part = (k) => {
     const cnt = Number(c[`${k}_offers`]) || 0;
     if (!cnt) return '';
@@ -189,7 +201,7 @@ function buildItems(c, src) {
     if (c[`${k}_in_stock`]) s += ' · в наличии';
     return s;
   };
-  add(4, 'Стекло фары', part('glass'), src.glass);
+  add(4, 'Стекло фары', part('glass'), [], src.glassCols);
   add(5, 'Корпус фары', part('housing'), src.housing);
   add(6, 'Переходная рамка под bi-LED', part('adapter'), src.adapter);
   const t = [];
