@@ -173,13 +173,16 @@ async function sources(ids) {
     return l && !r ? 'left' : r && !l ? 'right' : 'other';
   };
   const perHost = (list) => { const seen = new Set(); return list.filter((x) => !seen.has(x.host) && seen.add(x.host)).slice(0, PER_ITEM); };
-  const gl = uniq(parts.filter((r) => r.kind === 'glass')).map((r) => ({
-    url: r.url, host: hostOf(r.url), side: side(r.name),
-    title: short(r.name) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : ''),
-  }));
-  const glassCols = { left: perHost(gl.filter((x) => x.side === 'left')), right: perHost(gl.filter((x) => x.side === 'right')), other: perHost(gl.filter((x) => x.side === 'other')) };
+  const sideCols = (kind) => {
+    const gl = uniq(parts.filter((r) => r.kind === kind)).map((r) => ({
+      url: r.url, host: hostOf(r.url), side: side(r.name),
+      title: short(r.name) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : ''),
+    }));
+    return { left: perHost(gl.filter((x) => x.side === 'left')), right: perHost(gl.filter((x) => x.side === 'right')), other: perHost(gl.filter((x) => x.side === 'other')) };
+  };
+  const glassCols = sideCols('glass'), housingCols = sideCols('housing');
   return {
-    glassCols,
+    glassCols, housingCols,
     shop: onePerHost(uniq(shop)).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
     glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter'),
     teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
@@ -208,7 +211,7 @@ function buildItems(c, src) {
     return s;
   };
   add(4, 'Стекло фары', part('glass'), [], src.glassCols);
-  add(5, 'Корпус фары', part('housing'), src.housing);
+  add(5, 'Корпус фары', part('housing'), [], src.housingCols);
   add(6, 'Переходная рамка под bi-LED', part('adapter'), src.adapter);
   const t = [];
   if (c.difficulty != null) t.push(`сложность: ${c.difficulty}`);
