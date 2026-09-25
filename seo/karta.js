@@ -8,6 +8,8 @@
 //
 // Данные только из базы, ничего не достраивается: пустой пункт так и показан
 // пустым. Страница служебная (noindex), в sitemap её нет.
+const fs = require('fs');
+const path = require('path');
 const db = require('./lib/db');
 const vehiclesLib = require('../harvest/vehicles');
 
@@ -260,6 +262,11 @@ async function reference() {
   };
 }
 
+const LOGO_ALIAS = { mercedes: 'mercedess' };
+function logoOf(make) {
+  const n = LOGO_ALIAS[make] || make.replace(/[ -]/g, '_');
+  return fs.existsSync(path.join(__dirname, 'logos', n + '.png')) ? n : null;
+}
 async function options() {
   if (OPT.tree && Date.now() - OPT.at < 10 * 60_000) return OPT.tree;
   const [rows, canon] = await Promise.all([
@@ -346,9 +353,17 @@ async function handle(req, res) {
     } catch (e) { console.error('karta:', e.message); json(res, 500, { error: 'не удалось прочитать базу' }); }
     return true;
   }
+  const lg = p.match(/^\/karta\/logo\/([a-z0-9_]+)\.png$/);
+  if (lg && req.method === 'GET') {
+    const f = path.join(__dirname, 'logos', lg[1] + '.png');
+    if (!fs.existsSync(f)) return res.writeHead(404).end(), true;
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
+    fs.createReadStream(f).pipe(res);
+    return true;
+  }
   if (p === '/karta/options' && req.method === 'GET') {
     if (!db.enabled) return json(res, 503, { error: 'база не подключена' }), true;
-    try { json(res, 200, { makes: await options() }); }
+    try { json(res, 200, { makes: (await options()).map((m) => ({ ...m, logo: logoOf(m.make) })) }); }
     catch (e) { console.error('karta:', e.message); json(res, 500, { error: 'не удалось прочитать базу' }); }
     return true;
   }

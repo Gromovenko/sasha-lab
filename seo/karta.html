@@ -32,7 +32,7 @@
  .msg{padding:14px;border-radius:12px;background:#15171c;border:1px solid #23252c}
  .err{color:#ff8a80}
  @media(max-width:560px){td.l{width:auto} td{padding:8px 10px}}
-</style></head><body><div class="wrap">
+#pk a.lg{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:96px;min-height:88px;padding:6px;text-align:center;vertical-align:top;font-size:12px}#pk a.lg img{width:56px;height:56px;object-fit:contain;margin-bottom:4px}</style></head><body><div class="wrap">
 <h1>Карточка машины</h1>
 <p class="sub">Выберите марку, модель и год из списков или скажите голосом: например «Киа Селтос 2021».</p>
 
@@ -129,7 +129,7 @@
  function picker(){
   var mk=$('make').value, md=$('model').value, y=$('year').value, h='';
   if(!mk){
-   h='<div class="t">Марка:</div>'+TREE.map(function(m){return '<a href="'+href(m.make)+'" data-mk="'+esc(m.make)+'">'+esc(cap(m.make))+'</a>';}).join('');
+   h='<div class="t">Марка:</div>'+TREE.map(function(m){return '<a class="lg" href="'+href(m.make)+'" data-mk="'+esc(m.make)+'">'+(m.logo?'<img loading="lazy" src="/karta/logo/'+m.logo+'.png" alt="">':'')+'<span>'+esc(cap(m.make))+'</span></a>';}).join('');
   }else{
    h='<div class="t"><a href="?" data-mk="">← Все марки</a> '+esc(cap(mk))+' — модель:</div>'+
     models().map(function(m){return '<a href="'+href(mk,m.model)+'" data-mk="'+esc(mk)+'" data-md="'+esc(m.model)+'"'+(m.model===md?' class="on"':'')+'>'+esc(cap(m.model))+'</a>';}).join('');
