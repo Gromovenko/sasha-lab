@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Карточка машины — Дядя Саша</title>
+<style>
+ body{margin:0;background:#0e0f12;color:#e8e8ea;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+ .wrap{max-width:860px;margin:0 auto;padding:24px 16px 80px}
+ h1{font-size:24px;margin:0 0 4px} .sub{color:#9a9aa2;margin:0 0 18px}
+ .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+ input{box-sizing:border-box;background:#15171c;border:1px solid #2a2c33;border-radius:10px;color:#e8e8ea;padding:12px;font:inherit;min-width:0}
+ #make,#model{flex:1 1 140px} #year{flex:0 0 96px} #q{flex:1 1 auto}
+ button{border:0;border-radius:10px;font:600 16px/1 inherit;cursor:pointer;padding:12px 18px}
+ .go{background:#f0b429;color:#191919} .mic{background:#1d2027;color:#e8e8ea;border:1px solid #2c3038}
+ .mic.rec{background:#c0392b;border-color:#c0392b;color:#fff}
+ .hint{color:#9a9aa2;font-size:14px;margin:4px 0 14px}
+ .card{margin:18px 0;background:#15171c;border:1px solid #23252c;border-radius:14px;overflow:hidden}
+ .head{padding:14px 16px;background:#1a1d23;border-bottom:1px solid #23252c}
+ .head b{font-size:19px} .head span{color:#9a9aa2;font-size:14px;margin-left:8px}
+ table{width:100%;border-collapse:collapse}
+ td{padding:9px 16px;border-top:1px solid #1f2127;vertical-align:top;font-size:15px}
+ tr:first-child td{border-top:0}
+ td.n{width:30px;color:#6d6f78} td.l{width:36%;color:#b8b8c0}
+ .yes{color:#5fd08a;font-weight:600} .no{color:#7b7d86} .warn{color:#f0b429}
+ a{color:#f0b429} .sm{color:#9a9aa2;font-size:13px}
+ .msg{padding:14px;border-radius:12px;background:#15171c;border:1px solid #23252c}
+ .err{color:#ff8a80}
+ @media(max-width:560px){td.l{width:auto} td{padding:8px 10px}}
+</style></head><body><div class="wrap">
+<h1>Карточка машины</h1>
+<p class="sub">Введите марку, модель и год или скажите голосом: например «Киа Селтос 2021».</p>
+
+<div class="row">
+  <input id="q" placeholder="Строкой или голосом: марка модель год" autocomplete="off">
+  <button class="mic" id="mic" type="button" aria-label="Голосовой ввод">🎤 Голос</button>
+</div>
+<div class="row">
+  <input id="make" placeholder="Марка" autocomplete="off">
+  <input id="model" placeholder="Модель" autocomplete="off">
+  <input id="year" placeholder="Год" inputmode="numeric" maxlength="4">
+  <button class="go" id="go" type="button">Найти</button>
+</div>
+<div class="hint" id="hint"></div>
+<div id="out"></div>
+<p class="sm">Данные собраны из открытых источников. Пустой пункт значит «в базе нет», а не «нет у машины». Факты ещё не все подтверждены мастером.</p>
+</div>
+<script>
+(function(){
+ var $=function(id){return document.getElementById(id);};
+ var esc=function(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
+ var rub=function(n){return n==null?'':Number(n).toLocaleString('ru-RU')+' ₽';};
+ var link=function(u,t){return u?' <a href="'+esc(u)+'" target="_blank" rel="noopener noreferrer">'+(t||'открыть')+'</a>':'';};
+
+ // деталь: есть / нет, число предложений, цена от, наличие, ссылка
+ function part(c,k,noteIfNone){
+  var n=c[k+'_offers']|0;
+  if(!n) return '<span class="no">нет в базе</span>'+(noteIfNone?' <span class="sm">'+noteIfNone+'</span>':'');
+  var s='<span class="yes">есть</span> <span class="sm">· предложений: '+n;
+  if(c[k+'_price_min']!=null) s+=' · от '+rub(c[k+'_price_min']);
+  s+=c[k+'_in_stock']?' · в наличии':'';
+  return s+'</span>'+link(c[k+'_url']);
+ }
+ function fact(v,cnt,url,extra){
+  if(v==null||v==='') return '<span class="no">данных нет</span>';
+  return '<b>'+esc(v)+'</b>'+(extra?' <span class="sm">'+extra+'</span>':'')+(cnt?' <span class="sm">· фактов: '+cnt+'</span>':'')+link(url,'источник');
+ }
+ var cap=function(w){w=String(w||'');return w.length<=3?w.toUpperCase():w.charAt(0).toUpperCase()+w.slice(1);};
+ function yn(b){return b===true?'да':b===false?'нет':null;}
+
+ function card(c,yr){
+  var years=c.year_from?(c.year_from+'–'+(c.year_to||'н.в.')):'годы не указаны';
+  var rows=[];
+  var add=function(n,l,h){rows.push('<tr><td class="n">'+n+'</td><td class="l">'+l+'</td><td>'+h+'</td></tr>');};
+  add('4','Стекло фары',part(c,'glass'));
+  add('5','Корпус фары',part(c,'housing'));
+  add('6','Переходная рамка под bi-LED',part(c,'adapter'));
+  var t=[]; if(c.difficulty!=null) t.push('сложность: '+esc(c.difficulty));
+  if(c.needs_opening!=null) t.push('вскрытие: '+yn(c.needs_opening));
+  if(c.hours_max!=null) t.push('до '+esc(c.hours_max)+' ч');
+  add('7','Сложность разбора фары',t.length?'<b>'+t.join(' · ')+'</b>'+(c.teardown_facts?' <span class="sm">· фактов: '+c.teardown_facts+'</span>':'')+link(c.teardown_url,'источник'):'<span class="no">данных нет</span>');
+  add('8','Заводской герметик',fact(c.sealant||c.sealant_raw,c.sealant_facts,c.sealant_url));
+  add('9','Адаптивный свет',c.adaptive==null?'<span class="no">данных нет</span>':'<b>'+(c.adaptive?'адаптивный':'обычный')+'</b>'+(c.adaptive_facts?' <span class="sm">· фактов: '+c.adaptive_facts+'</span>':'')+link(c.adaptive_url,'источник'));
+  add('10','Штатный свет (ближний)',fact(c.low_beam||c.low_beam_raw,c.low_beam_facts,c.low_beam_url,c.factory_lens?'линза: '+esc(c.factory_lens):''));
+  var need=c.needs_canbus===true?' <span class="warn">нужны при замене на ксенон/LED</span>':'';
+  add('11','Обманки / имитация штатного света',part(c,'canbus')+need);
+  var b=[]; if(c.bulb_sockets&&c.bulb_sockets.length) b.push('цоколи: '+esc(c.bulb_sockets.join(', ')));
+  if(c.bulb_spots&&c.bulb_spots.length) b.push('места: '+esc(c.bulb_spots.join(', ')));
+  add('12','Типы ламп в штатных приборах',b.length?'<b>'+b.join(' · ')+'</b> <span class="sm">· предложений: '+c.bulb_offers+'</span>'+link(c.bulb_url):'<span class="no">данных нет</span>');
+  add('13','Фара оригинал',part(c,'headlight_oem','магазины редко пишут «оригинал»'));
+  add('14','Фара OEM (аналог оригинала)',part(c,'headlight_analog','магазины редко пишут «аналог»'));
+  add('15','Штатные блоки розжига',part(c,'ballast_oem'));
+  add('16','Штатные блоки управления',part(c,'control'));
+  add('17','Модули ДХО, поворота, боковой подсветки, колец',part(c,'drl'));
+  add('18','Набор для модернизации фар',part(c,'kit'));
+  var conf=c.confidence!=null?'<span class="sm">уверенность фактов до '+Math.round(c.confidence*100)+'%'+(c.confirmed?' · есть подтверждённые':'')+'</span>':'';
+  return '<div class="card"><div class="head"><b>1–3. '+esc(cap(c.make))+' '+esc(cap(c.model))+'</b>'+
+   '<span>'+esc(c.generation?c.generation+' · ':'')+years+(yr?' · запрос: '+yr:'')+'</span>'+
+   (c.shop_url?'<div class="sm">Раздел магазина по этой модели:'+link(c.shop_url,'перейти')+'</div>':'')+
+   (conf?'<div>'+conf+'</div>':'')+'</div><table>'+rows.join('')+'</table></div>';
+ }
+
+ var busy=false;
+ function search(){
+  if(busy) return;
+  var qs=[]; ['make','model','year'].forEach(function(k){var v=$(k).value.trim(); if(v) qs.push(k+'='+encodeURIComponent(v));});
+  var q=$('q').value.trim();
+  if(!qs.length&&!q){ $('out').innerHTML='<div class="msg">Введите марку и модель или надиктуйте.</div>'; return; }
+  if(q&&!( $('make').value.trim()&&$('model').value.trim())) qs=['q='+encodeURIComponent(q)];
+  busy=true; $('out').innerHTML='<div class="msg">Ищу…</div>';
+  fetch('/karta/api?'+qs.join('&')).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(x){
+    busy=false;
+    if(!x.ok){ $('out').innerHTML='<div class="msg err">'+esc(x.j.error||'ошибка')+'</div>'; return; }
+    var j=x.j;
+    if(!j.found){ $('out').innerHTML='<div class="msg">Такой машины в базе нет. Проверьте написание или попробуйте другую марку и модель.</div>'; return; }
+    var head=j.yearMiss?'<div class="msg warn">Года '+j.year+' нет ни в одном из поколений — показаны все найденные.</div>':'';
+    $('out').innerHTML=head+j.cards.map(function(c){return card(c,j.year);}).join('');
+  }).catch(function(){busy=false;$('out').innerHTML='<div class="msg err">Нет связи с сервером.</div>';});
+ }
+ $('go').onclick=function(){ $('q').value=''; search(); };
+ ['make','model','year'].forEach(function(k){$(k).addEventListener('keydown',function(e){if(e.key==='Enter'){$('q').value='';search();}});});
+ $('q').addEventListener('keydown',function(e){if(e.key==='Enter'){ ['make','model','year'].forEach(function(k){$(k).value='';}); search();}});
+
+ // ── голос ──
+ var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ var rec=null, media=null, chunks=[], recording=false;
+ function heard(text){
+  $('q').value=text; $('hint').textContent='Услышано: «'+text+'»';
+  ['make','model','year'].forEach(function(k){$(k).value='';}); search();
+ }
+ function stopUi(){ recording=false; $('mic').classList.remove('rec'); $('mic').textContent='🎤 Голос'; }
+ function viaBrowser(){
+  if(recording&&rec){ rec.stop(); return; }
+  rec=new SR(); rec.lang='ru-RU'; rec.interimResults=false; rec.maxAlternatives=1;
+  rec.onresult=function(e){ heard(e.results[0][0].transcript); };
+  rec.onerror=function(e){ stopUi(); $('hint').textContent=e.error==='not-allowed'?'Нет доступа к микрофону — разрешите его в браузере.':'Не удалось распознать ('+e.error+'). Попробуйте ещё раз.'; };
+  rec.onend=stopUi;
+  recording=true; $('mic').classList.add('rec'); $('mic').textContent='■ Говорите…'; $('hint').textContent='';
+  rec.start();
+ }
+ function viaServer(){
+  if(recording&&media){ media.stop(); return; }
+  if(!navigator.mediaDevices||!window.MediaRecorder){ $('hint').textContent='Браузер не умеет записывать голос. Введите текстом.'; return; }
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+   chunks=[]; media=new MediaRecorder(stream);
+   media.ondataavailable=function(e){ if(e.data.size) chunks.push(e.data); };
+   media.onstop=function(){
+    stream.getTracks().forEach(function(t){t.stop();}); stopUi(); $('hint').textContent='Распознаю…';
+    var blob=new Blob(chunks,{type:media.mimeType||'audio/webm'});
+    fetch('/karta/stt',{method:'POST',headers:{'Content-Type':blob.type},body:blob}).then(function(r){return r.json();}).then(function(j){
+     if(j.text) heard(j.text); else $('hint').textContent=j.error||'Не расслышал, повторите.';
+    }).catch(function(){ $('hint').textContent='Нет связи с сервером.'; });
+   };
+   recording=true; $('mic').classList.add('rec'); $('mic').textContent='■ Стоп'; $('hint').textContent='Говорите, затем нажмите «Стоп».';
+   media.start(); setTimeout(function(){ if(recording&&media&&media.state==='recording') media.stop(); },15000);
+  }).catch(function(){ $('hint').textContent='Нет доступа к микрофону — разрешите его в браузере.'; });
+ }
+ $('mic').onclick=function(){ SR?viaBrowser():viaServer(); };
+ var p=new URLSearchParams(location.search);
+ if(p.get('q')){ $('q').value=p.get('q'); search(); }
+})();
+</script></body></html>

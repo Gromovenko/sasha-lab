@@ -15,6 +15,7 @@ const adminSection = require('./admin/http');
 const admin = require('./seo/admin');
 const questions = require('./seo/questions');
 const assistant = require('./seo/assistant-http');
+const karta = require('./seo/karta');
 // Панель мастера и приём заявок (/crm, /zayavka, /api/lead) — тот же процесс:
 // отдельный веб-сервер ради двух экранов плодить незачем, фоновая работа
 // движка вынесена в engine/worker.js.
@@ -29,7 +30,7 @@ const PORT = Number(process.env.PORT || 3060);
 const HOST = process.env.HOST || '127.0.0.1';
 const SITE = process.env.SITE_ORIGIN || 'https://sasha-lab.ru';
 const NOINDEX_ALL = process.env.SITE_NOINDEX === '1';
-const PRIVATE = ['/admin', '/cabinet', '/crm', '/seo', '/api'];
+const PRIVATE = ['/admin', '/cabinet', '/crm', '/seo', '/api', '/karta'];
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -75,6 +76,9 @@ http.createServer(async (req, res) => {
 
   // Заявки: панель мастера, публичная форма и ручка приёма.
   if (await crm.handle(req, res)) return;
+
+  // Карточка машины: марка/модель/год (текстом или голосом) → все 18 пунктов из базы.
+  if (await karta.handle(req, res)) return;
 
   // Ассистент базы знаний: страница «Помощник», ручка вопроса и подбор по машине.
   if (await assistant.handle(req, res)) return;
