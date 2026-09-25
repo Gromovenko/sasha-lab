@@ -146,7 +146,7 @@ async function sources(ids) {
          FROM vehicle_parts vp JOIN parts p ON p.id = vp.part_id
          LEFT JOIN documents d ON d.url = p.url
         WHERE vp.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'p.url')}) t
-      WHERE rn <= 60`, [ids]);
+      WHERE rn <= 150`, [ids]);
   const facts = await db.q(
     `SELECT d.url, d.title, f.confidence, f.difficulty, f.needs_opening, f.hours, f.sealant,
             f.adaptive, f.low_beam_source
@@ -160,8 +160,8 @@ async function sources(ids) {
       ORDER BY CASE l.basis WHEN 'url' THEN 0 WHEN 'title' THEN 1 ELSE 2 END, l.url LIMIT 40`, [ids]);
   const uniq = (list) => { const seen = new Set(); return list.filter((x) => !seen.has(x.url) && seen.add(x.url)); };
   const onePerHost = (list) => { const seen = new Set(); return list.filter((x) => { const h = hostOf(x.url); return !seen.has(h) && seen.add(h); }); };
-  const pl = (kind, re) => onePerHost(uniq(parts.filter((r) => r.kind === kind && (!re || re.test(r.name)))))
-    .slice(0, PER_ITEM).map((r) => ({
+  const pl = (kind, re, n = PER_ITEM, no) => onePerHost(uniq(parts.filter((r) => r.kind === kind && (!re || re.test(r.name)) && !(no && no.test(r.name)))))
+    .slice(0, n).map((r) => ({
       url: r.url, host: hostOf(r.url),
       title: short(r.name) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : ''),
     }));
@@ -184,7 +184,7 @@ async function sources(ids) {
   return {
     glassCols, housingCols,
     shop: onePerHost(uniq(shop)).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
-    glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter'),
+    glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter', /рамк/i, 5, /переходник|адаптер/i),
     teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
     sealant: fl((r) => r.sealant != null),
     adaptive: fl((r) => r.adaptive != null),
