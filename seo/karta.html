@@ -31,6 +31,7 @@
  a{color:#f0b429} .sm{color:#9a9aa2;font-size:17px}
  .msg{padding:14px;border-radius:12px;background:#15171c;border:1px solid #23252c}
  .err{color:#ff8a80}
+ .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start} .g2>div{min-width:0;overflow-wrap:anywhere} .g2 ul.lk{padding-left:18px}
  @media(max-width:560px){td.l{width:auto} td{padding:8px 10px}}
 #pk a.lg{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:96px;min-height:88px;padding:6px;text-align:center;vertical-align:top;font-size:12px}#pk a.lg img{width:56px;height:56px;object-fit:contain;margin-bottom:4px}</style></head><body><div class="wrap">
 <h1>Карточка машины</h1>
@@ -69,7 +70,7 @@
   return '<div class="gc"><b>'+t+'</b>'+links([a])+(rest.length?'<div class="sm">Другие сайты:</div>'+links(rest):'')+'</div>';
  }
  function glass(c){
-  var h='<div style="display:flex;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:220px">'+col('Левое',c.left)+'</div><div style="flex:1;min-width:220px">'+col('Правое',c.right)+'</div></div>';
+  var h='<div class="g2"><div>'+col('Левое',c.left)+'</div><div>'+col('Правое',c.right)+'</div></div>';
   if(c.other.length) h+='<div class="sm" style="margin-top:6px">Без указания стороны:</div>'+links(c.other);
   return h;
  }
