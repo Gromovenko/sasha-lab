@@ -343,3 +343,30 @@ test('герметик: бутил отличается от полиурета�
   assert.equal(seal('Headlight on butyl sealant, bake at 110C. Haval Jolion.'), 'бутиловый герметик');
   assert.equal(seal('Haval Jolion: фара на полиуретановом герметике, не разбирается.'), 'полиуретановый герметик');
 });
+
+// ── штатное исполнение фары: адаптив, ближний с завода, обманки, цоколи ────
+// Сторожит выгрузку: поля 9–12 считаются в виде vehicle_catalog (миграция 008),
+// и единственное место, где их легко потерять, — столбцы CSV для человека.
+test('карточка машины: в выгрузке есть штатный свет, обманки и цоколи ламп', () => {
+  const catalog = require('../harvest/catalog');
+  const csv = catalog.toCsv([{
+    make: 'toyota', model: 'Corolla', year_from: 2018, year_to: 2021,
+    glass_offers: 3, housing_offers: 0, adapter_offers: 2,
+    difficulty: 'лёгкая', teardown_facts: 4, sealant: 'бутил', sealant_facts: 2,
+    adaptive: true, adaptive_facts: 3, low_beam: 'ксенон',
+    low_beam_raw: 'штатный ксенон', low_beam_facts: 5, factory_lens: 'Koito',
+    needs_canbus: true, canbus_offers: 1, canbus_price_min: 1200,
+    bulb_sockets: ['H11', 'HB3'], bulb_spots: ['ближний свет', 'дальний свет'],
+  }]);
+  const [head, row] = csv.split('\n');
+  for (const col of ['адаптивный свет', 'штатный ближний', 'нужна обманка',
+    'цоколи штатных ламп', 'штатные приборы']) assert.ok(head.includes(col), `нет столбца ${col}`);
+  assert.ok(row.includes('"H11, HB3"'), 'цоколи должны идти списком через запятую');
+  assert.ok(row.includes('"ближний свет, дальний свет"'), 'приборы должны идти списком');
+  assert.ok(row.includes('"ксенон"') && row.includes('"есть"'), 'штатный ближний и обманка');
+});
+
+test('виды деталей: обманка CAN-шины и лампа с цоколем', () => {
+  assert.equal(facts.kindOf('Обманка DIXEL Ford Focus 3 - 2CanBus'), 'wire');
+  assert.equal(facts.kindOf('Лампа ксеноновая D2S Philips 4300K'), 'bulb');
+});

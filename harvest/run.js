@@ -43,7 +43,8 @@ sasha-lab · сбор базы знаний
   links [--csv файл]         пересобрать «машина → ссылки на все ресурсы»; --csv выгружает таблицу
   links --check N            проверить живость N давно не проверявшихся ссылок
   catalog [--csv файл] [--all]  карточка машины: наличие стекла/корпуса/переходной рамки,
-                             сложность разбора и заводской герметик (--all — включая пустые)
+                             сложность разбора, заводской герметик, адаптивный свет, штатный
+                             ближний, обманки и цоколи ламп (--all — включая пустые)
   stats                      что накоплено
 
 Окружение: SASHALAB_PG_URL (без неё сбор пишет NDJSON в .harvest-out и говорит об этом).
@@ -164,6 +165,8 @@ async function main() {
       console.log(`  связей машина→деталь ${r.rows} по ${r.cars} машинам из ${r.vehicles}`);
       console.log(`  стекло фары ${r.glass}, корпус фары ${r.housing}, переходная рамка ${r.adapter},`
         + ` факты о разборе ${r.teardown}, заводской герметик ${r.sealant}`);
+      console.log(`  адаптивный свет ${r.adaptive}, штатный ближний ${r.low_beam},`
+        + ` цоколи штатных ламп ${r.sockets}`);
       const out = flag('csv');
       if (out) {
         const rows = await catalog.exportRows({ onlyWithData: !argv.includes('--all') });
