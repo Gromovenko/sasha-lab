@@ -262,7 +262,7 @@ async function reference() {
   };
 }
 
-const LOGO_ALIAS = { mercedes: 'mercedess' };
+const LOGO_ALIAS = { mercedes: 'mercedess', hyundai: 'huyndai', 'land-rover': 'lr', porsche: 'porshe', lixiang: 'li' };
 function logoOf(make) {
   const n = LOGO_ALIAS[make] || make.replace(/[ -]/g, '_');
   return fs.existsSync(path.join(__dirname, 'logos', n + '.png')) ? n : null;
