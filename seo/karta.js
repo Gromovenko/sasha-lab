@@ -131,7 +131,7 @@ const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); 
 // Короткий заголовок: без рекламного хвоста («• Купить…», «| сайт», «: артикул…»), до 46 знаков.
 const short = (t, n = 46) => {
   t = String(t || '').replace(/&bull;|&amp;|&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-  t = t.replace(/^(Купить|Заказать)\s+/i, '').split(/\s[•·|–—-]\s|\s:\s|:\s|…/)[0].trim() || t;
+  t = t.replace(/^(Купить|Заказать)\s+/i, '').split(/\s[•·|]\s|\s:\s|:\s|…/)[0].trim() || t;
   return t.length > n ? t.slice(0, n - 1).replace(/\s\S*$/, '') + '…' : t;
 };
 const ALIVE = `(d.id IS NULL OR (d.skip_reason IS NULL AND (d.http_status IS NULL OR d.http_status = 200)))
