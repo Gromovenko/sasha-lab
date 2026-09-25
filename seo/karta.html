@@ -14,6 +14,9 @@
  button{border:0;border-radius:10px;font:600 16px/1 inherit;cursor:pointer;padding:12px 18px}
  .go{background:#f0b429;color:#191919} .mic{background:#1d2027;color:#e8e8ea;border:1px solid #2c3038}
  .mic.rec{background:#c0392b;border-color:#c0392b;color:#fff}
+ .pk{margin:6px 0 14px} .pk .t{color:#9a9aa2;font-size:14px;margin:8px 0 6px}
+ .pk a{display:inline-block;margin:0 6px 6px 0;padding:7px 12px;border:1px solid #2a2c33;border-radius:999px;background:#15171c;color:#e8e8ea;text-decoration:none;font-size:15px}
+ .pk a:hover{border-color:#f0b429;color:#f0b429} .pk a.on{background:#f0b429;color:#191919;border-color:#f0b429}
  .hint{color:#9a9aa2;font-size:14px;margin:4px 0 14px}
  .card{margin:18px 0;background:#15171c;border:1px solid #23252c;border-radius:14px;overflow:hidden}
  .head{padding:14px 16px;background:#1a1d23;border-bottom:1px solid #23252c}
@@ -43,6 +46,7 @@
   <button class="mic" id="mic" type="button" aria-label="Голосовой ввод">🎤 Голос</button>
 </div>
 <div class="hint" id="hint"></div>
+<div class="pk" id="pk"></div>
 <div id="out"></div>
 <p class="sm">Данные собраны из открытых источников. Показаны только пункты, по которым в базе есть данные. Факты ещё не все подтверждены мастером.</p>
 </div>
@@ -103,7 +107,7 @@
    if(!x.ok){ $('out').innerHTML='<div class="msg err">'+esc(x.j.error||'ошибка')+'</div>'; return; }
    var j=x.j;
    if(!j.found){ $('out').innerHTML='<div class="msg">Такой машины в базе нет. Выберите марку и модель из списков.</div>'; return; }
-   if(q) syncSelects(j.cards[0],j.year);
+   if(q){ syncSelects(j.cards[0],j.year); picker(); }
    var head=j.yearMiss?'<div class="msg warn">Года '+j.year+' нет ни в одном из поколений — показаны все найденные.</div>':'';
    $('out').innerHTML=head+j.cards.map(function(c){return card(c,j.year);}).join('');
   }).catch(function(){busy=false;$('out').innerHTML='<div class="msg err">Нет связи с сервером.</div>';});
@@ -120,15 +124,45 @@
   var m=models().filter(function(x){return x.model===$('model').value;})[0];
   fill($('year'),m?m.years.map(function(y){return {v:y,t:y};}):[],'Любой год');
  }
- $('make').onchange=onMake;
- $('model').onchange=onModel;
- $('year').onchange=function(){ if($('model').value) search(); };
+ // ссылки-выбор: марки → модели → годы (как каталог на vdf-light.ru)
+ function href(mk,md,y){var q=[];if(mk)q.push('make='+encodeURIComponent(mk));if(md)q.push('model='+encodeURIComponent(md));if(y)q.push('year='+y);return '?'+q.join('&');}
+ function picker(){
+  var mk=$('make').value, md=$('model').value, y=$('year').value, h='';
+  if(!mk){
+   h='<div class="t">Марка:</div>'+TREE.map(function(m){return '<a href="'+href(m.make)+'" data-mk="'+esc(m.make)+'">'+esc(cap(m.make))+'</a>';}).join('');
+  }else{
+   h='<div class="t"><a href="?" data-mk="">← Все марки</a> '+esc(cap(mk))+' — модель:</div>'+
+    models().map(function(m){return '<a href="'+href(mk,m.model)+'" data-mk="'+esc(mk)+'" data-md="'+esc(m.model)+'"'+(m.model===md?' class="on"':'')+'>'+esc(cap(m.model))+'</a>';}).join('');
+   var m=models().filter(function(x){return x.model===md;})[0];
+   if(m&&m.years.length) h+='<div class="t">Год:</div><a href="'+href(mk,md)+'" data-mk="'+esc(mk)+'" data-md="'+esc(md)+'" data-y=""'+(y?'':' class="on"')+'>Любой</a>'+
+    m.years.map(function(yy){return '<a href="'+href(mk,md,yy)+'" data-mk="'+esc(mk)+'" data-md="'+esc(md)+'" data-y="'+yy+'"'+(String(yy)===y?' class="on"':'')+'>'+yy+'</a>';}).join('');
+  }
+  $('pk').innerHTML=h;
+ }
+ $('pk').onclick=function(e){
+  var a=e.target.closest?e.target.closest('a'):null; if(!a) return; e.preventDefault();
+  var mk=a.getAttribute('data-mk')||'', md=a.getAttribute('data-md')||'', y=a.getAttribute('data-y')||'';
+  $('make').value=mk; onMake(); $('model').value=md;
+  if(md){ onModelNoSearch(); $('year').value=y; }
+  if(history.pushState) history.pushState(null,'',href(mk,md,y));
+  picker();
+  if(md) search(); else $('out').innerHTML='';
+ };
+ $('make').onchange=function(){onMake();picker();};
+ $('model').onchange=function(){onModel();picker();};
+ $('year').onchange=function(){ picker(); if($('model').value) search(); };
  $('go').onclick=function(){ search(); };
  fetch('/karta/options').then(function(r){return r.json();}).then(function(j){
   TREE=j.makes||[];
   fill($('make'),TREE.map(function(m){return {v:m.make,t:cap(m.make)};}),'Марка');
   var p=new URLSearchParams(location.search);
-  if(p.get('q')) search(p.get('q'));
+  if(p.get('q')){ search(p.get('q')); return; }
+  var pm=(p.get('make')||'').toLowerCase(), pd=(p.get('model')||'').toLowerCase();
+  if(pm&&TREE.some(function(x){return x.make===pm;})){
+   $('make').value=pm; onMake();
+   if(pd){ $('model').value=pd; if($('model').value===pd){ onModelNoSearch(); if(p.get('year')) $('year').value=p.get('year'); search(); } }
+  }
+  picker();
  }).catch(function(){ $('hint').textContent='Не удалось загрузить список марок.'; });
 
  // ── голос ──
