@@ -20,15 +20,15 @@
  .hint{color:#9a9aa2;font-size:14px;margin:4px 0 14px}
  .card{margin:18px 0;background:#15171c;border:1px solid #23252c;border-radius:14px;overflow:hidden}
  .head{padding:14px 16px;background:#1a1d23;border-bottom:1px solid #23252c}
- .head b{font-size:19px} .head span{color:#9a9aa2;font-size:14px;margin-left:8px}
+ .head b{font-size:25px} .head span{color:#9a9aa2;font-size:18px;margin-left:8px}
  table{width:100%;border-collapse:collapse}
- td{padding:9px 16px;border-top:1px solid #1f2127;vertical-align:top;font-size:15px}
+ td{padding:9px 16px;border-top:1px solid #1f2127;vertical-align:top;font-size:20px}
  tr:first-child td{border-top:0}
- td.n{width:30px;color:#6d6f78} td.l{width:36%;color:#b8b8c0}
+ td.n{width:39px;color:#6d6f78} td.l{width:36%;color:#b8b8c0}
  .yes{color:#5fd08a;font-weight:600} .no{color:#7b7d86} .warn{color:#f0b429}
- .src{font-size:13px;margin-top:2px;color:#9a9aa2}
- ul.lk{margin:4px 0 0;padding-left:18px;font-size:14px} ul.lk li{margin:2px 0;font-weight:400}
- a{color:#f0b429} .sm{color:#9a9aa2;font-size:13px}
+ .src{font-size:17px;margin-top:2px;color:#9a9aa2}
+ ul.lk{margin:4px 0 0;padding-left:23px;font-size:18px} ul.lk li{margin:2px 0;font-weight:400}
+ a{color:#f0b429} .sm{color:#9a9aa2;font-size:17px}
  .msg{padding:14px;border-radius:12px;background:#15171c;border:1px solid #23252c}
  .err{color:#ff8a80}
  @media(max-width:560px){td.l{width:auto} td{padding:8px 10px}}
@@ -69,9 +69,8 @@
   var rows=c.items.map(function(i){
    return '<tr><td class="n">'+i.n+'</td><td class="l">'+esc(i.label)+'</td><td><b>'+esc(i.value)+'</b>'+links(i.links)+'</td></tr>';
   }).join('');
-  var shop=c.shop&&c.shop.length?'<div class="sm">Разделы магазинов по этой модели:</div>'+links(c.shop):'';
   return '<div class="card"><div class="head"><b>'+esc(cap(c.make))+' '+esc(cap(c.model))+'</b>'+
-   '<span>'+years+'</span>'+shop+'</div>'+
+   '<span>'+years+'</span></div>'+
    (rows?'<table>'+rows+'</table>':'<div class="msg">По этой машине пунктов с данными пока нет.</div>')+'</div>';
  }
 
