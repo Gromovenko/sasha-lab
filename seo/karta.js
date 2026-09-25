@@ -81,9 +81,36 @@ async function lookup(params) {
   if (!rows.length) return { found: false, year, cards: [] };
   const cat = await db.q('SELECT * FROM vehicle_catalog WHERE vehicle_id = ANY ($1)', [rows.map((r) => r.id)]);
   const byId = new Map(cat.map((c) => [c.vehicle_id, c]));
-  const cards = rows.map((v) => byId.get(v.id)).filter(Boolean)
-    .sort((a, b) => score(b) - score(a));
+  const cards = mergeCards(rows.map((v) => byId.get(v.id)).filter(Boolean)
+    .sort((a, b) => score(b) - score(a)));
   return { found: cards.length > 0, year, yearMiss, cards };
+}
+
+// Одна машина заведена в справочнике несколькими записями («Seltos», «Seltos I»,
+// «Seltos 1», «Seltos SP2»): без склейки карточка двоится. Склеиваем записи одной
+// марки и базовой модели с пересекающимися годами; за основу берём самую полную,
+// пустые пункты добираем из остальных.
+const baseModel = (m) => String(m || '').toLowerCase()
+  .replace(/[\s-]+(?:[ivx]{1,4}|\d{1,2}|sp\d+|gen\d*|mk\d+)$/i, '').trim();
+const overlap = (a, b) => !a.year_from || !b.year_from
+  || (a.year_from <= (b.year_to || 2100) + 1 && b.year_from <= (a.year_to || 2100) + 1);
+const empty = (v) => v == null || v === '' || v === 0 || v === false || (Array.isArray(v) && !v.length);
+
+function mergeCards(cards) {
+  const out = [];
+  for (const c of cards) {
+    const main = out.find((m) => String(m.make).toLowerCase() === String(c.make).toLowerCase()
+      && baseModel(m.model) === baseModel(c.model) && overlap(m, c));
+    if (!main) { out.push({ ...c }); continue; }
+    for (const k of Object.keys(c)) {
+      if (['vehicle_id', 'slug', 'make', 'model', 'generation', 'year_from', 'year_to'].includes(k)) continue;
+      if (empty(main[k]) && !empty(c[k])) main[k] = c[k];
+    }
+    if (c.year_from && main.year_from) main.year_from = Math.min(main.year_from, c.year_from);
+    if (c.year_to && main.year_to) main.year_to = Math.max(main.year_to, c.year_to);
+    else if (!c.year_to) main.year_to = main.year_to || null;
+  }
+  return out;
 }
 
 // Порядок поколений: сначала те, по которым больше заполненных пунктов.
@@ -156,4 +183,4 @@ async function handle(req, res) {
 
 const PAGE = require('fs').readFileSync(require('path').join(__dirname, 'karta.html'), 'utf8');
 
-module.exports = { handle, lookup, findVehicles };
+module.exports = { handle, lookup, findVehicles, mergeCards, baseModel };

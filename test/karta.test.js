@@ -16,3 +16,17 @@ test('страница отдаётся закрытой от индексаци
   assert.match(res.body, /ru-RU/);
   assert.match(res.body, /\/karta\/api/);
 });
+
+test('записи одной машины склеиваются в одну карточку', () => {
+  const mk = (id, model, yf, yt, extra = {}) => ({ vehicle_id: id, make: 'kia', model, year_from: yf, year_to: yt, glass_offers: 0, ...extra });
+  const out = karta.mergeCards([
+    mk(1, 'seltos', 2018, 2022, { glass_offers: 3, glass_url: 'https://a.ru/x' }),
+    mk(2, 'Seltos I', 2019, 2025, { housing_offers: 2, housing_url: 'https://b.ru/y' }),
+    mk(3, 'Seltos SP2', null, null),
+    mk(4, 'Sportage', 2018, 2022),
+  ]);
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out[0].glass_url, 'https://a.ru/x');
+  assert.strictEqual(out[0].housing_url, 'https://b.ru/y');
+  assert.strictEqual(out[0].year_to, 2025);
+});

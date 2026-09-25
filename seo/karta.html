@@ -22,6 +22,7 @@
  tr:first-child td{border-top:0}
  td.n{width:30px;color:#6d6f78} td.l{width:36%;color:#b8b8c0}
  .yes{color:#5fd08a;font-weight:600} .no{color:#7b7d86} .warn{color:#f0b429}
+ .src{font-size:13px;margin-top:2px;color:#9a9aa2}
  a{color:#f0b429} .sm{color:#9a9aa2;font-size:13px}
  .msg{padding:14px;border-radius:12px;background:#15171c;border:1px solid #23252c}
  .err{color:#ff8a80}
@@ -49,7 +50,8 @@
  var $=function(id){return document.getElementById(id);};
  var esc=function(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
  var rub=function(n){return n==null?'':Number(n).toLocaleString('ru-RU')+' ₽';};
- var link=function(u,t){return u?' <a href="'+esc(u)+'" target="_blank" rel="noopener noreferrer">'+(t||'открыть')+'</a>':'';};
+ var host=function(u){try{return new URL(u).hostname.replace(/^www\./,'');}catch(e){return 'источник';}};
+ var link=function(u){return u?'<div class="src">Источник: <a href="'+esc(u)+'" target="_blank" rel="noopener noreferrer">'+esc(host(u))+'</a></div>':'';};
 
  // деталь: есть / нет, число предложений, цена от, наличие, ссылка
  function part(c,k,noteIfNone){
