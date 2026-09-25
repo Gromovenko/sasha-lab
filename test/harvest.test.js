@@ -357,6 +357,11 @@ test('карточка машины: в выгрузке есть штатный
     low_beam_raw: 'штатный ксенон', low_beam_facts: 5, factory_lens: 'Koito',
     needs_canbus: true, canbus_offers: 1, canbus_price_min: 1200,
     bulb_sockets: ['H11', 'HB3'], bulb_spots: ['ближний свет', 'дальний свет'],
+    shop_url: 'https://shop.example/toyota/corolla/',
+    glass_url: 'https://shop.example/glass/1', adapter_url: 'https://shop.example/adapter/2',
+    teardown_url: 'https://studio.example/works/3', sealant_url: 'https://studio.example/works/4',
+    adaptive_url: 'https://studio.example/works/5', low_beam_url: 'https://studio.example/works/6',
+    canbus_url: 'https://shop.example/wire/7', bulb_url: 'https://shop.example/bulb/8',
   }]);
   const [head, row] = csv.split('\n');
   for (const col of ['адаптивный свет', 'штатный ближний', 'нужна обманка',
@@ -366,7 +371,64 @@ test('карточка машины: в выгрузке есть штатный
   assert.ok(row.includes('"ксенон"') && row.includes('"есть"'), 'штатный ближний и обманка');
 });
 
+// К каждому из двенадцати пунктов — своя ссылка (миграция 009). Теряется она
+// молча: столбец просто исчезает из выгрузки, а «есть/нет» остаётся на месте.
+test('карточка машины: у каждого пункта своя рабочая ссылка', () => {
+  const catalog = require('../harvest/catalog');
+  const row = {
+    make: 'toyota', model: 'Corolla',
+    shop_url: 'https://shop.example/toyota/corolla/',
+    glass_url: 'https://shop.example/glass/1', housing_url: 'https://shop.example/housing/9',
+    adapter_url: 'https://shop.example/adapter/2', teardown_url: 'https://studio.example/works/3',
+    sealant_url: 'https://studio.example/works/4', adaptive_url: 'https://studio.example/works/5',
+    low_beam_url: 'https://studio.example/works/6', canbus_url: 'https://shop.example/wire/7',
+    bulb_url: 'https://shop.example/bulb/8',
+  };
+  const [head, line] = catalog.toCsv([row]).split('\n');
+  for (const col of ['магазин по модели', 'ссылка на стекло', 'ссылка на корпус', 'ссылка на рамку',
+    'источник о разборе', 'источник о герметике', 'источник об адаптивном', 'источник о ближнем',
+    'ссылка на обманку', 'ссылка на лампы']) assert.ok(head.includes(col), `нет столбца ${col}`);
+  // каждый адрес доехал до строки, и столбцов ровно столько же, сколько в шапке
+  for (const col of catalog.LINK_COLS.filter((c) => row[c])) assert.ok(line.includes(row[col]), `потерян ${col}`);
+  assert.equal(line.split(';').length, head.split(';').length);
+});
+
 test('виды деталей: обманка CAN-шины и лампа с цоколем', () => {
   assert.equal(facts.kindOf('Обманка DIXEL Ford Focus 3 - 2CanBus'), 'wire');
   assert.equal(facts.kindOf('Лампа ксеноновая D2S Philips 4300K'), 'bulb');
+});
+
+// ── карточка машины, пункты 13–18 (миграция 010) ──────────────────────────
+test('виды деталей 13–18: фара, блок управления, модуль ДХО, набор для модернизации', () => {
+  const k = facts.kindOf;
+  assert.equal(k('Фара Toyota Camry 70 оригинал (левая)'), 'headlight_oem');
+  assert.equal(k('Фара BMW 5 G30 DEPO (левая)'), 'headlight_analog');
+  assert.equal(k('Фара AUDI A7 4K MATRIX (2018-2022) (левая)'), 'headlight', 'без пометки — ни оригинал, ни аналог');
+  assert.equal(k('Купить фара диодная 7 в NTS-AUTO'), 'other', 'универсальный прожектор — не штатная фара');
+  assert.equal(k('Блок-фара в сборе Kia Rio 4'), 'housing');
+  assert.equal(k('Блок управления фарой BMW G30'), 'control');
+  assert.equal(k('Блок управления центральным замком 910'), 'other');
+  assert.equal(k('Блок розжига штатный Valeo LAD5GL OEM'), 'ballast');
+  assert.equal(k('Плата ДХО DIXEL для Q3 I 8U'), 'drl');
+  assert.equal(k('Ангельские глазки для Passat B6'), 'drl');
+  assert.equal(k('Светодиодные лампы для Audi Q3 в Задние поворотники'), 'bulb', 'лампа поворота — не модуль');
+  assert.equal(k('Маски M15-O 1.5 дюйма с 3D-LED анимацией (ДХО / габарит / поворот)'), 'mask');
+  assert.equal(k('Toyota Caldina T240 набор линз для фар Hella 3R'), 'kit');
+  assert.equal(k('Набор для установки линз в фары Ford Focus [2014-2019]'), 'kit');
+  assert.equal(k('Переходные рамки для установки BI-LED Hella 3R'), 'adapter');
+});
+
+test('карточка машины: пункты 13–18 в выгрузке с ценой и ссылкой', () => {
+  const catalog = require('../harvest/catalog');
+  const row = { make: 'audi', model: 'A7' };
+  for (const [k] of catalog.EXTRA_ITEMS) {
+    row[`${k}_offers`] = 2; row[`${k}_price_min`] = 1000; row[`${k}_url`] = `https://shop.example/${k}`;
+  }
+  const [head, line] = catalog.toCsv([row]).split('\n');
+  for (const [k, title] of catalog.EXTRA_ITEMS) {
+    assert.ok(head.includes(title), `нет столбца ${title}`);
+    assert.ok(line.includes(`https://shop.example/${k}`), `потеряна ссылка ${k}`);
+    assert.ok(catalog.LINK_COLS.includes(`${k}_url`));
+  }
+  assert.equal(line.split(';').length, head.split(';').length);
 });

@@ -2,7 +2,10 @@
 // переходной рамки, сложность разбора и заводской герметик (таблица
 // vehicle_parts и вид vehicle_catalog, миграция 007), а с миграции 008 — ещё и
 // штатное исполнение фары: адаптивный свет, чем светит ближний с завода, нужны
-// ли обманки при замене света и какие лампы стоят в штатных приборах.
+// ли обманки при замене света и какие лампы стоят в штатных приборах. С миграции
+// 009 к КАЖДОМУ пункту идёт своя ссылка: для деталей — карточка товара, для
+// фактов (разбор, герметик, адаптив, ближний) — страница-источник, для машины
+// целиком — раздел магазина по этой модели.
 //
 // Связь «машина → товар» берём не заново из текста, а из уже построенной
 // vehicle_links: там марка и модель уже опознаны по адресу, заголовку или факту
@@ -10,15 +13,43 @@
 // набор ложных срабатываний. parts.url и documents.url — один и тот же адрес
 // страницы товара, поэтому связь получается обычным join.
 const db = require('../seo/lib/db');
+const http = require('./http');
 
 // Какие виды деталей отвечают на вопрос владельца. Остальные (линзы, лампы,
 // блоки розжига) в vehicle_parts тоже попадают — карточка их не показывает, но
 // иметь их под рукой дешевле, чем пересобирать таблицу при следующей просьбе.
-const CATALOG_KINDS = ['glass', 'housing', 'adapter'];
+const CATALOG_KINDS = ['glass', 'housing', 'adapter', 'headlight_oem', 'headlight_analog', 'control', 'drl', 'kit'];
+
+// Пункты 13–18 (миграция 010): префикс столбцов вида и подпись для выгрузки.
+const EXTRA_ITEMS = [
+  ['headlight_oem', 'фара оригинал'], ['headlight_analog', 'фара OEM-аналог'],
+  ['ballast_oem', 'штатный блок розжига'], ['control', 'штатный блок управления'],
+  ['drl', 'модуль ДХО/поворота/колец'], ['kit', 'набор для модернизации'],
+];
+
+// Вид детали хранится в parts.kind, а правила его определения растут (пункты
+// 13–18 добавили пять новых видов). Поэтому перед пересборкой карточки вид
+// пересчитывается по названию заново: без этого старые строки остались бы в other.
+async function reclassify(c) {
+  const facts = require('./facts');
+  const rows = (await c.query('SELECT id, name, kind FROM parts')).rows;
+  const byKind = new Map();
+  for (const r of rows) {
+    const k = facts.kindOf(r.name || '');
+    if (k !== r.kind) { if (!byKind.has(k)) byKind.set(k, []); byKind.get(k).push(r.id); }
+  }
+  let changed = 0;
+  for (const [k, ids] of byKind) {
+    await c.query('UPDATE parts SET kind = $1 WHERE id = ANY($2::bigint[])', [k, ids]);
+    changed += ids.length;
+  }
+  return changed;
+}
 
 async function rebuild() {
   if (!db.enabled) throw new Error('нужна база (SASHALAB_PG_URL)');
   return db.tx(async (c) => {
+    const reclassified = await reclassify(c);
     await c.query('DELETE FROM vehicle_parts');
     // basis берём самый надёжный из имеющихся: evidence → url → title.
     await c.query(`
@@ -38,8 +69,17 @@ async function rebuild() {
              (SELECT count(*) FROM vehicle_catalog WHERE adaptive IS NOT NULL) AS adaptive,
              (SELECT count(*) FROM vehicle_catalog WHERE low_beam IS NOT NULL) AS low_beam,
              (SELECT count(*) FROM vehicle_catalog WHERE bulb_sockets IS NOT NULL) AS sockets,
+             -- ссылки к пунктам (миграция 009): пункт бесполезен, если некуда ехать
+             (SELECT count(*) FROM vehicle_catalog WHERE shop_url IS NOT NULL) AS shop_links,
+             (SELECT count(*) FROM vehicle_catalog
+               WHERE glass_url IS NOT NULL OR housing_url IS NOT NULL OR adapter_url IS NOT NULL
+                  OR canbus_url IS NOT NULL OR bulb_url IS NOT NULL) AS part_links,
+             (SELECT count(*) FROM vehicle_catalog
+               WHERE teardown_url IS NOT NULL OR sealant_url IS NOT NULL
+                  OR adaptive_url IS NOT NULL OR low_beam_url IS NOT NULL) AS fact_links,
+             ${EXTRA_ITEMS.map(([k]) => `(SELECT count(*) FROM vehicle_catalog WHERE ${k}_offers > 0) AS ${k}`).join(',\n             ')},
              (SELECT count(*) FROM vehicles) AS vehicles`)).rows;
-    return r;
+    return { ...r, reclassified };
   });
 }
 
@@ -51,31 +91,76 @@ async function exportRows({ onlyWithData = true } = {}) {
      ${onlyWithData ? 'WHERE glass_offers > 0 OR housing_offers > 0 OR adapter_offers > 0'
                     + ' OR teardown_facts > 0 OR sealant IS NOT NULL'
                     + ' OR adaptive IS NOT NULL OR low_beam IS NOT NULL'
-                    + ' OR bulb_sockets IS NOT NULL OR canbus_offers > 0' : ''}
-     ORDER BY (glass_offers > 0)::int + (housing_offers > 0)::int + (adapter_offers > 0)::int DESC,
+                    + ' OR bulb_sockets IS NOT NULL OR canbus_offers > 0'
+                    + EXTRA_ITEMS.map(([k]) => ` OR ${k}_offers > 0`).join('') : ''}
+     ORDER BY (glass_offers > 0)::int + (housing_offers > 0)::int + (adapter_offers > 0)::int
+              + (headlight_oem_offers > 0)::int + (headlight_analog_offers > 0)::int
+              + (kit_offers > 0)::int DESC,
               teardown_facts DESC, make, model`);
+}
+
+// Какие столбцы карточки — ссылки. Порядок важен только для отчёта.
+const LINK_COLS = ['shop_url', 'glass_url', 'housing_url', 'adapter_url', 'teardown_url',
+  'sealant_url', 'adaptive_url', 'low_beam_url', 'canbus_url', 'bulb_url',
+  ...EXTRA_ITEMS.map(([k]) => `${k}_url`)];
+
+// «Рабочая ссылка» не на слово: те адреса, что реально попали в карточку,
+// перепроверяем запросом и помечаем результат в vehicle_links — вид сам
+// перестанет их предлагать (см. dead_url в миграции 009). Медленно намеренно:
+// пауза хоста та же, что у сбора.
+async function checkLinks({ limit = 200 } = {}) {
+  if (!db.enabled) throw new Error('нужна база (SASHALAB_PG_URL)');
+  const rows = await db.q(`
+    WITH u AS (SELECT DISTINCT unnest(ARRAY[${LINK_COLS.join(', ')}]) AS url FROM vehicle_catalog)
+    SELECT u.url, min(s.delay_ms) AS delay_ms
+      FROM u JOIN vehicle_links l ON l.url = u.url
+      LEFT JOIN sources s ON s.id = l.source_id
+     WHERE u.url IS NOT NULL
+     GROUP BY u.url
+     ORDER BY min(l.checked_at) NULLS FIRST, u.url
+     LIMIT $1`, [limit]);
+  let ok = 0; const dead = [];
+  for (const r of rows) {
+    let status = null;
+    try { status = (await http.get(r.url, { delayMs: r.delay_ms || 3000, useCache: false })).status; }
+    catch { status = 0; }
+    await db.q('UPDATE vehicle_links SET http_status = $2, checked_at = now() WHERE url = $1', [r.url, status]);
+    if (status === 200) ok++; else dead.push({ url: r.url, status });
+  }
+  return { checked: rows.length, ok, dead };
 }
 
 const yesNo = (n) => (n > 0 ? 'есть' : 'нет');
 const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 const yesNoBool = (v) => (v === true ? 'есть' : v === false ? 'нет' : '');
 const list = (v) => (Array.isArray(v) ? v.join(', ') : '');
-const HEAD = ['марка', 'модель', 'поколение', 'годы', 'стекло фары', 'цена стекла',
-  'корпус фары', 'цена корпуса', 'переходная рамка', 'цена рамки',
-  'сложность разбора', 'вскрытие', 'часов', 'фактов о разборе',
-  'герметик', 'как в источнике', 'фактов о герметике',
-  'адаптивный свет', 'фактов об адаптивном', 'штатный ближний', 'как в источнике',
-  'фактов о ближнем', 'заводская линза', 'нужна обманка', 'обманки в продаже',
-  'цена обманки', 'цоколи штатных ламп', 'штатные приборы'];
+// Каждый пункт идёт со своей ссылкой в соседнем столбце: «есть/нет» без адреса
+// заставляет мастера искать деталь заново, а ради этого база и собиралась.
+const HEAD = ['марка', 'модель', 'поколение', 'годы', 'магазин по модели',
+  'стекло фары', 'цена стекла', 'ссылка на стекло',
+  'корпус фары', 'цена корпуса', 'ссылка на корпус',
+  'переходная рамка', 'цена рамки', 'ссылка на рамку',
+  'сложность разбора', 'вскрытие', 'часов', 'фактов о разборе', 'источник о разборе',
+  'герметик', 'как в источнике', 'фактов о герметике', 'источник о герметике',
+  'адаптивный свет', 'фактов об адаптивном', 'источник об адаптивном',
+  'штатный ближний', 'как в источнике', 'фактов о ближнем', 'источник о ближнем',
+  'заводская линза', 'нужна обманка', 'обманки в продаже',
+  'цена обманки', 'ссылка на обманку',
+  'цоколи штатных ламп', 'штатные приборы', 'ссылка на лампы',
+  ...EXTRA_ITEMS.flatMap(([, t]) => [t, `цена: ${t}`, `ссылка: ${t}`])];
 const toCsv = (rows) => [HEAD.join(';'), ...rows.map((r) => [
-  r.make, r.model, r.generation, [r.year_from, r.year_to].filter(Boolean).join('–'),
-  yesNo(r.glass_offers), r.glass_price_min, yesNo(r.housing_offers), r.housing_price_min,
-  yesNo(r.adapter_offers), r.adapter_price_min,
+  r.make, r.model, r.generation, [r.year_from, r.year_to].filter(Boolean).join('–'), r.shop_url,
+  yesNo(r.glass_offers), r.glass_price_min, r.glass_url,
+  yesNo(r.housing_offers), r.housing_price_min, r.housing_url,
+  yesNo(r.adapter_offers), r.adapter_price_min, r.adapter_url,
   r.difficulty, r.needs_opening === true ? 'нужно' : r.needs_opening === false ? 'не нужно' : '',
-  r.hours_max, r.teardown_facts, r.sealant, r.sealant_raw, r.sealant_facts,
-  yesNoBool(r.adaptive), r.adaptive_facts, r.low_beam, r.low_beam_raw, r.low_beam_facts,
-  r.factory_lens, yesNoBool(r.needs_canbus), yesNo(r.canbus_offers), r.canbus_price_min,
-  list(r.bulb_sockets), list(r.bulb_spots),
+  r.hours_max, r.teardown_facts, r.teardown_url,
+  r.sealant, r.sealant_raw, r.sealant_facts, r.sealant_url,
+  yesNoBool(r.adaptive), r.adaptive_facts, r.adaptive_url,
+  r.low_beam, r.low_beam_raw, r.low_beam_facts, r.low_beam_url,
+  r.factory_lens, yesNoBool(r.needs_canbus), yesNo(r.canbus_offers), r.canbus_price_min, r.canbus_url,
+  list(r.bulb_sockets), list(r.bulb_spots), r.bulb_url,
+  ...EXTRA_ITEMS.flatMap(([k]) => [yesNo(r[`${k}_offers`]), r[`${k}_price_min`], r[`${k}_url`]]),
 ].map(csvCell).join(';'))].join('\n');
 
-module.exports = { rebuild, exportRows, toCsv, CATALOG_KINDS };
+module.exports = { rebuild, reclassify, EXTRA_ITEMS, checkLinks, exportRows, toCsv, CATALOG_KINDS, LINK_COLS };

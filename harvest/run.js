@@ -11,7 +11,8 @@
 //   node harvest/run.js probe [--hosts a,b]     — замер безопасной скорости источников
 //   node harvest/run.js facts [--limit 500]     — разбор скачанного в факты
 //   node harvest/run.js links [--check N] [--csv файл] — база авто со ссылками на все ресурсы
-//   node harvest/run.js catalog [--csv файл]    — карточка машины: стекло/корпус/рамка, разбор, герметик
+//   node harvest/run.js catalog [--csv файл]    — карточка машины: стекло/корпус/рамка, разбор, герметик + ссылки
+//   node harvest/run.js catalog --check N       — перепроверить живость ссылок карточки
 //   node harvest/run.js stats                   — что накоплено
 //
 // Сбор идёт медленно НАМЕРЕННО (пауза на источник, потолок страниц за заход):
@@ -44,7 +45,9 @@ sasha-lab · сбор базы знаний
   links --check N            проверить живость N давно не проверявшихся ссылок
   catalog [--csv файл] [--all]  карточка машины: наличие стекла/корпуса/переходной рамки,
                              сложность разбора, заводской герметик, адаптивный свет, штатный
-                             ближний, обманки и цоколи ламп (--all — включая пустые)
+                             ближний, обманки и цоколи ламп — к каждому пункту рабочая
+                             ссылка (--all — включая пустые)
+  catalog --check N          перепроверить живость N ссылок из карточки
   stats                      что накоплено
 
 Окружение: SASHALAB_PG_URL (без неё сбор пишет NDJSON в .harvest-out и говорит об этом).
@@ -161,12 +164,23 @@ async function main() {
       break;
     }
     case 'catalog': {
+      if (argv.includes('--check')) {
+        const r = await catalog.checkLinks({ limit: Number(flag('check', 200)) });
+        console.log(`  проверено ссылок карточки ${r.checked}: рабочих ${r.ok}, мёртвых ${r.dead.length}`);
+        for (const d of r.dead.slice(0, 20)) console.log(`    ${d.status} ${d.url}`);
+        break;
+      }
       const r = await catalog.rebuild();
       console.log(`  связей машина→деталь ${r.rows} по ${r.cars} машинам из ${r.vehicles}`);
       console.log(`  стекло фары ${r.glass}, корпус фары ${r.housing}, переходная рамка ${r.adapter},`
         + ` факты о разборе ${r.teardown}, заводской герметик ${r.sealant}`);
       console.log(`  адаптивный свет ${r.adaptive}, штатный ближний ${r.low_beam},`
         + ` цоколи штатных ламп ${r.sockets}`);
+      console.log(`  фара оригинал ${r.headlight_oem}, фара OEM-аналог ${r.headlight_analog}, штатный блок розжига ${r.ballast_oem},`
+        + ` блок управления ${r.control}, модули ДХО/поворота/колец ${r.drl}, наборы для модернизации ${r.kit}`
+        + ` (пересчитан вид у ${r.reclassified} деталей)`);
+      console.log(`  ссылки: магазин по модели ${r.shop_links}, на детали ${r.part_links},`
+        + ` на источник факта ${r.fact_links}`);
       const out = flag('csv');
       if (out) {
         const rows = await catalog.exportRows({ onlyWithData: !argv.includes('--all') });
