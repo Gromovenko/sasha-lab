@@ -8,8 +8,9 @@
  .wrap{max-width:860px;margin:0 auto;padding:24px 16px 80px}
  h1{font-size:24px;margin:0 0 4px} .sub{color:#9a9aa2;margin:0 0 18px}
  .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+ select{box-sizing:border-box;background:#15171c;border:1px solid #2a2c33;border-radius:10px;color:#e8e8ea;padding:12px;font:inherit;min-width:0}
  input{box-sizing:border-box;background:#15171c;border:1px solid #2a2c33;border-radius:10px;color:#e8e8ea;padding:12px;font:inherit;min-width:0}
- #make,#model{flex:1 1 140px} #year{flex:0 0 96px} #q{flex:1 1 auto}
+ #make,#model{flex:1 1 140px} #year{flex:0 0 120px} select:disabled{opacity:.5}
  button{border:0;border-radius:10px;font:600 16px/1 inherit;cursor:pointer;padding:12px 18px}
  .go{background:#f0b429;color:#191919} .mic{background:#1d2027;color:#e8e8ea;border:1px solid #2c3038}
  .mic.rec{background:#c0392b;border-color:#c0392b;color:#fff}
@@ -29,17 +30,16 @@
  @media(max-width:560px){td.l{width:auto} td{padding:8px 10px}}
 </style></head><body><div class="wrap">
 <h1>Карточка машины</h1>
-<p class="sub">Введите марку, модель и год или скажите голосом: например «Киа Селтос 2021».</p>
+<p class="sub">Выберите марку, модель и год из списков или скажите голосом: например «Киа Селтос 2021».</p>
 
 <div class="row">
-  <input id="q" placeholder="Строкой или голосом: марка модель год" autocomplete="off">
-  <button class="mic" id="mic" type="button" aria-label="Голосовой ввод">🎤 Голос</button>
+  <select id="make"><option value="">Марка</option></select>
+  <select id="model" disabled><option value="">Модель</option></select>
+  <select id="year" disabled><option value="">Год</option></select>
 </div>
 <div class="row">
-  <input id="make" placeholder="Марка" autocomplete="off">
-  <input id="model" placeholder="Модель" autocomplete="off">
-  <input id="year" placeholder="Год" inputmode="numeric" maxlength="4">
   <button class="go" id="go" type="button">Найти</button>
+  <button class="mic" id="mic" type="button" aria-label="Голосовой ввод">🎤 Голос</button>
 </div>
 <div class="hint" id="hint"></div>
 <div id="out"></div>
@@ -101,33 +101,70 @@
    (conf?'<div>'+conf+'</div>':'')+'</div><table>'+rows.join('')+'</table></div>';
  }
 
- var busy=false;
- function search(){
+ var busy=false, TREE=[];
+ var BASE=/[\s-]+(?:[ivx]{1,4}|\d{1,2}|sp\d+|gen\d*|mk\d+)$/i;
+ function fill(sel,items,ph){
+  sel.innerHTML='<option value="">'+ph+'</option>'+items.map(function(i){return '<option value="'+esc(i.v)+'">'+esc(i.t)+'</option>';}).join('');
+  sel.disabled=!items.length;
+ }
+ function models(){ var m=TREE.filter(function(x){return x.make===$('make').value;})[0]; return m?m.models:[]; }
+ function onMake(){
+  fill($('model'),models().map(function(m){return {v:m.model,t:cap(m.model)};}),'Модель');
+  fill($('year'),[],'Год');
+ }
+ function onModel(){
+  var m=models().filter(function(x){return x.model===$('model').value;})[0];
+  fill($('year'),m?m.years.map(function(y){return {v:y,t:y};}):[],'Любой год');
+  if(m) $('year').options[0].textContent='Любой год';
+  if(m) search();
+ }
+ function search(q){
   if(busy) return;
-  var qs=[]; ['make','model','year'].forEach(function(k){var v=$(k).value.trim(); if(v) qs.push(k+'='+encodeURIComponent(v));});
-  var q=$('q').value.trim();
-  if(!qs.length&&!q){ $('out').innerHTML='<div class="msg">Введите марку и модель или надиктуйте.</div>'; return; }
-  if(q&&!( $('make').value.trim()&&$('model').value.trim())) qs=['q='+encodeURIComponent(q)];
+  var qs=[];
+  if(q) qs.push('q='+encodeURIComponent(q));
+  else{
+   if(!$('make').value||!$('model').value){ $('out').innerHTML='<div class="msg">Выберите марку и модель.</div>'; return; }
+   ['make','model','year'].forEach(function(k){var v=$(k).value; if(v) qs.push(k+'='+encodeURIComponent(v));});
+  }
   busy=true; $('out').innerHTML='<div class="msg">Ищу…</div>';
   fetch('/karta/api?'+qs.join('&')).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(x){
-    busy=false;
-    if(!x.ok){ $('out').innerHTML='<div class="msg err">'+esc(x.j.error||'ошибка')+'</div>'; return; }
-    var j=x.j;
-    if(!j.found){ $('out').innerHTML='<div class="msg">Такой машины в базе нет. Проверьте написание или попробуйте другую марку и модель.</div>'; return; }
-    var head=j.yearMiss?'<div class="msg warn">Года '+j.year+' нет ни в одном из поколений — показаны все найденные.</div>':'';
-    $('out').innerHTML=head+j.cards.map(function(c){return card(c,j.year);}).join('');
+   busy=false;
+   if(!x.ok){ $('out').innerHTML='<div class="msg err">'+esc(x.j.error||'ошибка')+'</div>'; return; }
+   var j=x.j;
+   if(!j.found){ $('out').innerHTML='<div class="msg">Такой машины в базе нет. Выберите марку и модель из списков.</div>'; return; }
+   if(q) syncSelects(j.cards[0],j.year);
+   var head=j.yearMiss?'<div class="msg warn">Года '+j.year+' нет ни в одном из поколений — показаны все найденные.</div>':'';
+   $('out').innerHTML=head+j.cards.map(function(c){return card(c,j.year);}).join('');
   }).catch(function(){busy=false;$('out').innerHTML='<div class="msg err">Нет связи с сервером.</div>';});
  }
- $('go').onclick=function(){ $('q').value=''; search(); };
- ['make','model','year'].forEach(function(k){$(k).addEventListener('keydown',function(e){if(e.key==='Enter'){$('q').value='';search();}});});
- $('q').addEventListener('keydown',function(e){if(e.key==='Enter'){ ['make','model','year'].forEach(function(k){$(k).value='';}); search();}});
+ // после голоса выставляем списки по найденной машине
+ function syncSelects(c,y){
+  var mk=String(c.make).toLowerCase(), md=String(c.model).toLowerCase().replace(BASE,'').trim();
+  if(!TREE.some(function(x){return x.make===mk;})) return;
+  $('make').value=mk; onMake(); $('model').value=md;
+  if($('model').value!==md) return;
+  onModelNoSearch(); if(y) $('year').value=String(y);
+ }
+ function onModelNoSearch(){
+  var m=models().filter(function(x){return x.model===$('model').value;})[0];
+  fill($('year'),m?m.years.map(function(y){return {v:y,t:y};}):[],'Любой год');
+ }
+ $('make').onchange=onMake;
+ $('model').onchange=onModel;
+ $('year').onchange=function(){ if($('model').value) search(); };
+ $('go').onclick=function(){ search(); };
+ fetch('/karta/options').then(function(r){return r.json();}).then(function(j){
+  TREE=j.makes||[];
+  fill($('make'),TREE.map(function(m){return {v:m.make,t:cap(m.make)};}),'Марка');
+  var p=new URLSearchParams(location.search);
+  if(p.get('q')) search(p.get('q'));
+ }).catch(function(){ $('hint').textContent='Не удалось загрузить список марок.'; });
 
  // ── голос ──
  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  var rec=null, media=null, chunks=[], recording=false;
  function heard(text){
-  $('q').value=text; $('hint').textContent='Услышано: «'+text+'»';
-  ['make','model','year'].forEach(function(k){$(k).value='';}); search();
+  $('hint').textContent='Услышано: «'+text+'»'; search(text);
  }
  function stopUi(){ recording=false; $('mic').classList.remove('rec'); $('mic').textContent='🎤 Голос'; }
  function viaBrowser(){
@@ -157,7 +194,5 @@
   }).catch(function(){ $('hint').textContent='Нет доступа к микрофону — разрешите его в браузере.'; });
  }
  $('mic').onclick=function(){ SR?viaBrowser():viaServer(); };
- var p=new URLSearchParams(location.search);
- if(p.get('q')){ $('q').value=p.get('q'); search(); }
 })();
 </script></body></html>

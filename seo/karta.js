@@ -113,6 +113,38 @@ function mergeCards(cards) {
   return out;
 }
 
+// ── выпадающие списки: марка → модель → год ─────────────────────────────────
+// Берём только машины, у которых есть карточка (vehicle_catalog). Модели считаем
+// по базовому имени («Seltos I» и «Seltos» — одна), годы — объединением диапазонов.
+let OPT = { at: 0, tree: null };
+
+async function options() {
+  if (OPT.tree && Date.now() - OPT.at < 10 * 60_000) return OPT.tree;
+  const rows = await db.q('SELECT make, model, year_from, year_to FROM vehicle_catalog WHERE make IS NOT NULL AND model IS NOT NULL');
+  const tree = new Map();                       // марка → модель → {label, years:Set}
+  const thisYear = new Date().getFullYear();
+  for (const r of rows) {
+    const mk = String(r.make).toLowerCase();
+    const bm = baseModel(r.model);
+    if (!bm) continue;
+    if (!tree.has(mk)) tree.set(mk, new Map());
+    const models = tree.get(mk);
+    if (!models.has(bm)) models.set(bm, { years: new Set() });
+    if (r.year_from) {
+      for (let y = r.year_from; y <= Math.min(r.year_to || thisYear, thisYear + 1); y++) models.get(bm).years.add(y);
+    }
+  }
+  OPT = {
+    at: Date.now(),
+    tree: [...tree.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([make, models]) => ({
+      make,
+      models: [...models.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([model, v]) => ({ model, years: [...v.years].sort((a, b) => b - a) })),
+    })),
+  };
+  return OPT.tree;
+}
+
 // Порядок поколений: сначала те, по которым больше заполненных пунктов.
 function score(c) {
   let s = 0;
@@ -169,6 +201,12 @@ async function handle(req, res) {
     } catch (e) { console.error('karta:', e.message); json(res, 500, { error: 'не удалось прочитать базу' }); }
     return true;
   }
+  if (p === '/karta/options' && req.method === 'GET') {
+    if (!db.enabled) return json(res, 503, { error: 'база не подключена' }), true;
+    try { json(res, 200, { makes: await options() }); }
+    catch (e) { console.error('karta:', e.message); json(res, 500, { error: 'не удалось прочитать базу' }); }
+    return true;
+  }
   if (p === '/karta/stt' && req.method === 'POST') {
     if (!rateOk('s' + ip, STT_MAX)) return json(res, 429, { error: 'слишком много записей подряд' }), true;
     try {
@@ -183,4 +221,4 @@ async function handle(req, res) {
 
 const PAGE = require('fs').readFileSync(require('path').join(__dirname, 'karta.html'), 'utf8');
 
-module.exports = { handle, lookup, findVehicles, mergeCards, baseModel };
+module.exports = { handle, lookup, options, findVehicles, mergeCards, baseModel };
