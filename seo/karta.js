@@ -136,6 +136,10 @@ const LAMP_SPOTS = [
   ['Противотуманные (зад)', /^Задние противотуман/i], ['Задний ход', /^(Задний ход|Лампа заднего)/i],
   ['Подсветка номера', /^Подсветка номера/i],
 ];
+// Цоколь лампы: из названия товара или из названий товаров на странице подбора
+const SOCK_RE = /\b(HIR2|HB[3-5]|H(?:1[0-6]|27|[1-9])B?|D[1-4][SR]|PY21W|P21\/[45]W|P21W|W21\/5W|W21W|W16W|W5W|R5W|C5W|T4W|T10|T15|T20|BA9S|BAY15D|9005|9006)\b/gi;
+const SOCK_ALIAS = { '9005': 'HB3', '9006': 'HB4' };
+const socketsOf = (s) => [...new Set([...String(s || '').matchAll(SOCK_RE)].map((m) => { const k = m[1].toUpperCase(); return SOCK_ALIAS[k] || k; }))];
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'источник'; } };
 // Короткий заголовок: без рекламного хвоста («• Купить…», «| сайт», «: артикул…»), до 46 знаков.
 const short = (t, n = 46) => {
@@ -150,6 +154,8 @@ async function sources(ids) {
   const parts = await db.q(
     `SELECT * FROM (
        SELECT vp.kind, p.name, p.url, p.price_rub, p.available,
+              CASE WHEN vp.kind = 'bulb' THEN (SELECT string_agg(m[1], ' | ')
+                     FROM regexp_matches(d.text, '\\n([^\\n]+)\\n\\s*[^\\n]*₽\\s*\\nКупить\\s*\\nКод:', 'g') m) END AS prods,
               row_number() OVER (PARTITION BY vp.kind ORDER BY (p.available IS TRUE) DESC,
                 (p.price_rub > 0) DESC, p.price_rub, p.last_seen DESC) AS rn
          FROM vehicle_parts vp JOIN parts p ON p.id = vp.part_id
@@ -195,12 +201,13 @@ async function sources(ids) {
   const bulbAll = uniq(parts.filter((r) => r.kind === 'bulb'));
   for (const [label, re] of LAMP_SPOTS) {
     const list = bulbAll.filter((r) => re.test(String(r.name).replace(/^.*? в (?=[А-ЯЁ])/, '')) && / в [А-ЯЁ]/.test(r.name)).map((r) => {
-      const sock = (String(r.name).match(/\b(HB[34]|H1[13]|H[134789]|D[1-4][SR]|P?W?21(?:\/5)?W|W5W|T10|T20)\b/i) || [])[1];
-      return { url: r.url, host: hostOf(r.url), sock: sock ? sock.toUpperCase() : '',
-        title: (sock ? sock.toUpperCase() + ' · ' : '') + (/^Светодиодн/i.test(r.name) ? 'LED · ' : '') + short(r.name.replace(/^.*? для\s+/i, '').replace(/\s+в\s+[А-ЯЁ].*$/, ''), 40) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : '') };
+      const own = socketsOf(r.name), all = own.length ? own : socketsOf(r.prods);
+      const sock = all[0] || '';
+      return { url: r.url, host: hostOf(r.url), sock, all,
+        title: (sock ? sock + ' · ' : '') + (/^Светодиодн/i.test(r.name) ? 'LED · ' : '') + short(r.name.replace(/^.*? для\s+/i, '').replace(/\s+в\s+[А-ЯЁ].*$/, ''), 40) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : '') };
     });
     const top = perHost(list).slice(0, 2);
-    const found = [...new Set(list.map((x) => x.sock).filter(Boolean))];
+    const found = [...new Set(list.flatMap((x) => x.all))];
     if (top.length || found.length) bulbRows.push({ label, list: top, socks: found });
   }
   return {
