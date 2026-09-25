@@ -219,14 +219,50 @@ function buildItems(c, src) {
 // по базовому имени («Seltos I» и «Seltos» — одна), годы — объединением диапазонов.
 let OPT = { at: 0, tree: null };
 
+// Эталон моделей: имя считается настоящей моделью, если оно есть в каталоге
+// vdf-light (страницы /catalog/<марка>_<модель>) или подтверждено страницами
+// минимум двух разных сайтов. Так отсеиваются слова из заголовков («look», «use»),
+// опечатки и чужие модели под чужой маркой; варианты «mdx 1g», «mdx mdx»
+// схлопываются в кратчайший подтверждённый префикс («mdx»).
+const MIN_SOURCES = 2;
+const key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9а-я]+/g, ' ').trim().split(' ').filter(Boolean);
+
+async function reference() {
+  const [vdf, src] = await Promise.all([
+    db.q(`SELECT DISTINCT regexp_replace(url, '^.*/catalog/', '') AS slug FROM documents
+           WHERE url ~ 'vdf-light\\.ru/catalog/[a-z0-9]+_'`),
+    db.q(`SELECT lower(v.make) AS make, lower(v.model) AS model, count(DISTINCT l.source_id)::int AS n
+            FROM vehicle_links l JOIN vehicles v ON v.id = l.vehicle_id
+           GROUP BY 1, 2`),
+  ]);
+  const slugs = vdf.map((r) => r.slug.replace(/^frame_/, '').replace(/\/$/, ''));
+  const inVdf = (make, words) => {
+    const k = `${key(make).join('_')}_${words.join('_')}`;
+    return slugs.some((x) => x === k || x.startsWith(`${k}_`));
+  };
+  const multi = new Set(src.filter((r) => r.n >= MIN_SOURCES).map((r) => `${r.make}|${key(r.model).join(' ')}`));
+  return (make, model) => {
+    const words = key(model);
+    if (words.some((w) => /[^a-z0-9]/.test(w))) return null;   // модели пишутся латиницей
+    for (let i = 1; i <= words.length; i++) {
+      const head = words.slice(0, i);
+      if (multi.has(`${String(make).toLowerCase()}|${head.join(' ')}`) || inVdf(make, head)) return head.join(' ');
+    }
+    return null;
+  };
+}
+
 async function options() {
   if (OPT.tree && Date.now() - OPT.at < 10 * 60_000) return OPT.tree;
-  const rows = await db.q('SELECT make, model, year_from, year_to FROM vehicle_catalog WHERE make IS NOT NULL AND model IS NOT NULL');
-  const tree = new Map();                       // марка → модель → {label, years:Set}
+  const [rows, canon] = await Promise.all([
+    db.q('SELECT make, model, year_from, year_to FROM vehicle_catalog WHERE make IS NOT NULL AND model IS NOT NULL'),
+    reference(),
+  ]);
+  const tree = new Map();                       // марка → модель → {years:Set}
   const thisYear = new Date().getFullYear();
   for (const r of rows) {
     const mk = String(r.make).toLowerCase();
-    const bm = baseModel(r.model);
+    const bm = canon(mk, baseModel(r.model));
     if (!bm) continue;
     if (!tree.has(mk)) tree.set(mk, new Map());
     const models = tree.get(mk);
