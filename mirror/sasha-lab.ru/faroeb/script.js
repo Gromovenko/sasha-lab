@@ -1,4 +1,12 @@
 'use strict';
+// страница всегда открывается сверху, даже по ссылке с якорем (#works и т.п.)
+if (location.hash) {
+  history.scrollRestoration = 'manual';
+  history.replaceState(null, '', location.pathname + location.search);
+  window.scrollTo(0, 0);
+  window.addEventListener('load', () => window.scrollTo(0, 0), { once: true });
+}
+
 const scene = document.querySelector('#light-scene');
 const beamButtons = document.querySelectorAll('[data-beam]');
 for (const button of beamButtons) {
