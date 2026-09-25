@@ -69,10 +69,9 @@
   var rows=c.items.map(function(i){
    return '<tr><td class="n">'+i.n+'</td><td class="l">'+esc(i.label)+'</td><td><b>'+esc(i.value)+'</b>'+links(i.links)+'</td></tr>';
   }).join('');
-  var conf=c.confidence!=null?'<div class="sm">уверенность фактов до '+Math.round(c.confidence*100)+'%'+(c.confirmed?' · есть подтверждённые':'')+'</div>':'';
   var shop=c.shop&&c.shop.length?'<div class="sm">Разделы магазинов по этой модели:</div>'+links(c.shop):'';
   return '<div class="card"><div class="head"><b>'+esc(cap(c.make))+' '+esc(cap(c.model))+'</b>'+
-   '<span>'+years+(yr?' · запрос: '+yr:'')+'</span>'+conf+shop+'</div>'+
+   '<span>'+years+'</span>'+shop+'</div>'+
    (rows?'<table>'+rows+'</table>':'<div class="msg">По этой машине пунктов с данными пока нет.</div>')+'</div>';
  }
 
