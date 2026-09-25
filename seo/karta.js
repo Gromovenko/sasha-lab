@@ -126,9 +126,14 @@ function mergeCards(cards) {
 }
 
 // ── ссылки на источники: по каждому пункту список живых адресов ─────────────
-const PER_ITEM = 6;
+const PER_ITEM = 3;
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'источник'; } };
-const short = (t, n = 90) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+// Короткий заголовок: без рекламного хвоста («• Купить…», «| сайт», «: артикул…»), до 46 знаков.
+const short = (t, n = 46) => {
+  t = String(t || '').replace(/&bull;|&amp;|&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  t = t.replace(/^(Купить|Заказать)\s+/i, '').split(/\s[•·|–—-]\s|\s:\s|:\s|…/)[0].trim() || t;
+  return t.length > n ? t.slice(0, n - 1).replace(/\s\S*$/, '') + '…' : t;
+};
 const ALIVE = `(d.id IS NULL OR (d.skip_reason IS NULL AND (d.http_status IS NULL OR d.http_status = 200)))
   AND NOT EXISTS (SELECT 1 FROM vehicle_links x WHERE x.url = %U AND x.http_status IS NOT NULL AND x.http_status <> 200)`;
 
@@ -154,14 +159,15 @@ async function sources(ids) {
       WHERE l.vehicle_id = ANY ($1) AND s.kind = 'parts' AND (l.http_status IS NULL OR l.http_status = 200)
       ORDER BY CASE l.basis WHEN 'url' THEN 0 WHEN 'title' THEN 1 ELSE 2 END, l.url LIMIT 40`, [ids]);
   const uniq = (list) => { const seen = new Set(); return list.filter((x) => !seen.has(x.url) && seen.add(x.url)); };
-  const pl = (kind, re) => uniq(parts.filter((r) => r.kind === kind && (!re || re.test(r.name))))
+  const onePerHost = (list) => { const seen = new Set(); return list.filter((x) => { const h = hostOf(x.url); return !seen.has(h) && seen.add(h); }); };
+  const pl = (kind, re) => onePerHost(uniq(parts.filter((r) => r.kind === kind && (!re || re.test(r.name)))))
     .slice(0, PER_ITEM).map((r) => ({
       url: r.url, host: hostOf(r.url),
       title: short(r.name) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : ''),
     }));
-  const fl = (pred) => uniq(facts.filter(pred)).slice(0, PER_ITEM)
+  const fl = (pred) => onePerHost(uniq(facts.filter(pred))).slice(0, PER_ITEM)
     .map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) }));
-  // стекло: левое / правое отдельно; по одному предложению на сайт, не больше 5
+  // стекло: левое / правое отдельно; по одному предложению на сайт, не больше 3
   const side = (n) => {
     const l = /лев|\bLH\b|\(L\)/i.test(n), r = /прав|\bRH\b|\(R\)/i.test(n);
     return l && !r ? 'left' : r && !l ? 'right' : 'other';
@@ -174,7 +180,7 @@ async function sources(ids) {
   const glassCols = { left: perHost(gl.filter((x) => x.side === 'left')), right: perHost(gl.filter((x) => x.side === 'right')), other: perHost(gl.filter((x) => x.side === 'other')) };
   return {
     glassCols,
-    shop: uniq(shop).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
+    shop: onePerHost(uniq(shop)).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
     glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter'),
     teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
     sealant: fl((r) => r.sealant != null),
