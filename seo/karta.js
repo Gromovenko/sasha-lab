@@ -225,6 +225,10 @@ let OPT = { at: 0, tree: null };
 // опечатки и чужие модели под чужой маркой; варианты «mdx 1g», «mdx mdx»
 // схлопываются в кратчайший подтверждённый префикс («mdx»).
 const MIN_SOURCES = 2;
+// Снимок страницы criline.ru/perexodnyie-ramki/ (слаги переходных рамок «марка-модель-…»):
+// модели оттуда считаются подтверждёнными безусловно.
+let CRILINE = [];
+try { CRILINE = require('./criline-frames.json'); } catch { /* нет снимка — эталон только vdf и сайты */ }
 const key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9а-я]+/g, ' ').trim().split(' ').filter(Boolean);
 
 async function reference() {
@@ -240,13 +244,17 @@ async function reference() {
     const k = `${key(make).join('_')}_${words.join('_')}`;
     return slugs.some((x) => x === k || x.startsWith(`${k}_`));
   };
+  const inCriline = (make, words) => {
+    const k = `${key(make).join('-')}-${words.join('-')}`;
+    return CRILINE.some((x) => x === k || x.startsWith(`${k}-`));
+  };
   const multi = new Set(src.filter((r) => r.n >= MIN_SOURCES).map((r) => `${r.make}|${key(r.model).join(' ')}`));
   return (make, model) => {
     const words = key(model);
     if (words.some((w) => /[^a-z0-9]/.test(w))) return null;   // модели пишутся латиницей
     for (let i = 1; i <= words.length; i++) {
       const head = words.slice(0, i);
-      if (multi.has(`${String(make).toLowerCase()}|${head.join(' ')}`) || inVdf(make, head)) return head.join(' ');
+      if (multi.has(`${String(make).toLowerCase()}|${head.join(' ')}`) || inVdf(make, head) || inCriline(make, head)) return head.join(' ');
     }
     return null;
   };
