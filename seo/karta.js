@@ -127,6 +127,15 @@ function mergeCards(cards) {
 
 // ── ссылки на источники: по каждому пункту список живых адресов ─────────────
 const PER_ITEM = 3;
+// Места установки ламп в штатных приборах (порядок вывода в пункте 12)
+const LAMP_SPOTS = [
+  ['Ближний свет', /^Ближний/i], ['Дальний свет', /^Дальний/i], ['Противотуманные (перед)', /^Передние противотуман/i],
+  ['ДХО', /^ДХО/i], ['Передние габариты', /^Передние габарит/i], ['Передние поворотники', /^Передние поворот/i],
+  ['Боковые поворотники', /^Боковые поворот/i], ['Стоп-сигнал', /^Стоп/i], ['Доп. стоп-сигнал', /^Доп/i],
+  ['Задние габариты', /^Задние габарит/i], ['Задние поворотники', /^Задние поворот/i],
+  ['Противотуманные (зад)', /^Задние противотуман/i], ['Задний ход', /^(Задний ход|Лампа заднего)/i],
+  ['Подсветка номера', /^Подсветка номера/i],
+];
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'источник'; } };
 // Короткий заголовок: без рекламного хвоста («• Купить…», «| сайт», «: артикул…»), до 46 знаков.
 const short = (t, n = 46) => {
@@ -181,8 +190,20 @@ async function sources(ids) {
     return { left: perHost(gl.filter((x) => x.side === 'left')), right: perHost(gl.filter((x) => x.side === 'right')), other: perHost(gl.filter((x) => x.side === 'other')) };
   };
   const glassCols = sideCols('glass'), housingCols = sideCols('housing');
+  // лампы по местам: ближний, дальний, стоп-сигнал и т.д.; по одному предложению на сайт, до 2 на место
+  const bulbRows = [];
+  const bulbAll = uniq(parts.filter((r) => r.kind === 'bulb'));
+  for (const [label, re] of LAMP_SPOTS) {
+    const list = bulbAll.filter((r) => re.test(String(r.name).replace(/^.*? в (?=[А-ЯЁ])/, '')) && / в [А-ЯЁ]/.test(r.name)).map((r) => {
+      const sock = (String(r.name).match(/\b(HB[34]|H1[13]|H[134789]|D[1-4][SR]|P?W?21(?:\/5)?W|W5W|T10|T20)\b/i) || [])[1];
+      return { url: r.url, host: hostOf(r.url),
+        title: (sock ? sock.toUpperCase() + ' · ' : '') + (/^Светодиодн/i.test(r.name) ? 'LED · ' : '') + short(r.name.replace(/^.*? для\s+/i, '').replace(/\s+в\s+[А-ЯЁ].*$/, ''), 40) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : '') };
+    });
+    const top = perHost(list).slice(0, 2);
+    if (top.length) bulbRows.push({ label, list: top });
+  }
   return {
-    glassCols, housingCols,
+    glassCols, housingCols, bulbRows,
     shop: onePerHost(uniq(shop)).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
     glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter', /рамк/i, 5, /переходник|адаптер/i),
     teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
@@ -201,7 +222,7 @@ async function sources(ids) {
 function buildItems(c, src) {
   const items = [];
   const rub = (n) => Number(n).toLocaleString('ru-RU') + ' ₽';
-  const add = (n, label, value, links, cols) => { if (value) items.push({ n, label, value, links: links || [], cols }); };
+  const add = (n, label, value, links, cols, rows) => { if (value) items.push({ n, label, value, links: links || [], cols, rows }); };
   const part = (k) => {
     const cnt = Number(c[`${k}_offers`]) || 0;
     if (!cnt) return '';
@@ -227,7 +248,8 @@ function buildItems(c, src) {
   const b = [];
   if (c.bulb_sockets && c.bulb_sockets.length) b.push(`цоколи: ${c.bulb_sockets.join(', ')}`);
   if (c.bulb_spots && c.bulb_spots.length) b.push(`места: ${c.bulb_spots.join(', ')}`);
-  add(12, 'Типы ламп в штатных приборах', b.join(' · '), src.bulb);
+  const lampRows = src.bulbRows || [];
+  add(12, 'Типы ламп в штатных приборах', lampRows.length ? `мест с лампами: ${lampRows.length}` : b.join(' · '), src.bulb, null, lampRows);
   add(13, 'Фара оригинал', part('headlight_oem'), src.headlight_oem);
   add(14, 'Фара OEM (аналог оригинала)', part('headlight_analog'), src.headlight_analog);
   add(15, 'Штатные блоки розжига', part('ballast_oem'), src.ballast_oem);
