@@ -81,36 +81,137 @@ async function lookup(params) {
   if (!rows.length) return { found: false, year, cards: [] };
   const cat = await db.q('SELECT * FROM vehicle_catalog WHERE vehicle_id = ANY ($1)', [rows.map((r) => r.id)]);
   const byId = new Map(cat.map((c) => [c.vehicle_id, c]));
-  const cards = mergeCards(rows.map((v) => byId.get(v.id)).filter(Boolean)
-    .sort((a, b) => score(b) - score(a)));
-  return { found: cards.length > 0, year, yearMiss, cards };
+  // Карточка ОДНА: все записи справочника одной марки и семейства модели
+  // склеиваются, показываем самое полное семейство.
+  const card = mergeCards(rows.map((v) => byId.get(v.id)).filter(Boolean)
+    .sort((a, b) => score(b) - score(a)))[0];
+  if (!card) return { found: false, year, cards: [] };
+  const ids = cat.filter((c) => sameFamily(card, c)).map((c) => c.vehicle_id);
+  const src = await sources(ids);
+  return { found: true, year, yearMiss, cards: [{
+    make: card.make, model: card.model, year_from: card.year_from, year_to: card.year_to,
+    confidence: card.confidence, confirmed: card.confirmed,
+    shop: src.shop, items: buildItems(card, src),
+  }] };
 }
 
 // Одна машина заведена в справочнике несколькими записями («Seltos», «Seltos I»,
-// «Seltos 1», «Seltos SP2»): без склейки карточка двоится. Склеиваем записи одной
-// марки и базовой модели с пересекающимися годами; за основу берём самую полную,
+// «Seltos 1», «Seltos SP2», «SELTOS HALOGEN»). Склеиваем записи одной марки и
+// одного семейства модели независимо от годов; за основу берём самую полную,
 // пустые пункты добираем из остальных.
 const baseModel = (m) => String(m || '').toLowerCase()
   .replace(/[\s-]+(?:[ivx]{1,4}|\d{1,2}|sp\d+|gen\d*|mk\d+)$/i, '').trim();
-const overlap = (a, b) => !a.year_from || !b.year_from
-  || (a.year_from <= (b.year_to || 2100) + 1 && b.year_from <= (a.year_to || 2100) + 1);
+const sameFamily = (a, b) => {
+  if (String(a.make).toLowerCase() !== String(b.make).toLowerCase()) return false;
+  const x = baseModel(a.model), y = baseModel(b.model);
+  return x === y || x.startsWith(y + ' ') || y.startsWith(x + ' ');
+};
 const empty = (v) => v == null || v === '' || v === 0 || v === false || (Array.isArray(v) && !v.length);
 
 function mergeCards(cards) {
   const out = [];
   for (const c of cards) {
-    const main = out.find((m) => String(m.make).toLowerCase() === String(c.make).toLowerCase()
-      && baseModel(m.model) === baseModel(c.model) && overlap(m, c));
+    const main = out.find((m) => sameFamily(m, c));
     if (!main) { out.push({ ...c }); continue; }
     for (const k of Object.keys(c)) {
       if (['vehicle_id', 'slug', 'make', 'model', 'generation', 'year_from', 'year_to'].includes(k)) continue;
       if (empty(main[k]) && !empty(c[k])) main[k] = c[k];
     }
-    if (c.year_from && main.year_from) main.year_from = Math.min(main.year_from, c.year_from);
-    if (c.year_to && main.year_to) main.year_to = Math.max(main.year_to, c.year_to);
-    else if (!c.year_to) main.year_to = main.year_to || null;
+    if (c.year_from) main.year_from = main.year_from ? Math.min(main.year_from, c.year_from) : c.year_from;
+    if (c.year_to) main.year_to = main.year_to ? Math.max(main.year_to, c.year_to) : c.year_to;
   }
   return out;
+}
+
+// ── ссылки на источники: по каждому пункту список живых адресов ─────────────
+const PER_ITEM = 6;
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return 'источник'; } };
+const short = (t, n = 90) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const ALIVE = `(d.id IS NULL OR (d.skip_reason IS NULL AND (d.http_status IS NULL OR d.http_status = 200)))
+  AND NOT EXISTS (SELECT 1 FROM vehicle_links x WHERE x.url = %U AND x.http_status IS NOT NULL AND x.http_status <> 200)`;
+
+async function sources(ids) {
+  const parts = await db.q(
+    `SELECT * FROM (
+       SELECT vp.kind, p.name, p.url, p.price_rub, p.available,
+              row_number() OVER (PARTITION BY vp.kind ORDER BY (p.available IS TRUE) DESC,
+                (p.price_rub > 0) DESC, p.price_rub, p.last_seen DESC) AS rn
+         FROM vehicle_parts vp JOIN parts p ON p.id = vp.part_id
+         LEFT JOIN documents d ON d.url = p.url
+        WHERE vp.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'p.url')}) t
+      WHERE rn <= 60`, [ids]);
+  const facts = await db.q(
+    `SELECT d.url, d.title, f.confidence, f.difficulty, f.needs_opening, f.hours, f.sealant,
+            f.adaptive, f.low_beam_source
+       FROM fitment f CROSS JOIN LATERAL unnest(f.evidence) e
+       JOIN documents d ON d.id = e
+      WHERE f.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'd.url')}
+      ORDER BY f.confidence DESC, d.fetched_at DESC LIMIT 600`, [ids]);
+  const shop = await db.q(
+    `SELECT l.url, l.title FROM vehicle_links l JOIN sources s ON s.id = l.source_id
+      WHERE l.vehicle_id = ANY ($1) AND s.kind = 'parts' AND (l.http_status IS NULL OR l.http_status = 200)
+      ORDER BY CASE l.basis WHEN 'url' THEN 0 WHEN 'title' THEN 1 ELSE 2 END, l.url LIMIT 40`, [ids]);
+  const uniq = (list) => { const seen = new Set(); return list.filter((x) => !seen.has(x.url) && seen.add(x.url)); };
+  const pl = (kind, re) => uniq(parts.filter((r) => r.kind === kind && (!re || re.test(r.name))))
+    .slice(0, PER_ITEM).map((r) => ({
+      url: r.url, host: hostOf(r.url),
+      title: short(r.name) + (r.price_rub > 0 ? ` — ${Number(r.price_rub).toLocaleString('ru-RU')} ₽` : ''),
+    }));
+  const fl = (pred) => uniq(facts.filter(pred)).slice(0, PER_ITEM)
+    .map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) }));
+  return {
+    shop: uniq(shop).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
+    glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter'),
+    teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
+    sealant: fl((r) => r.sealant != null),
+    adaptive: fl((r) => r.adaptive != null),
+    low_beam: fl((r) => r.low_beam_source != null),
+    canbus: pl('wire', /обманк|canbus|can-шин|имитатор/i),
+    bulb: pl('bulb'),
+    headlight_oem: pl('headlight_oem'), headlight_analog: pl('headlight_analog'),
+    ballast_oem: pl('ballast', /штатн|oem|оригинал/i),
+    control: pl('control'), drl: pl('drl'), kit: pl('kit'),
+  };
+}
+
+// Пункты карточки: только те, по которым в базе что-то есть.
+function buildItems(c, src) {
+  const items = [];
+  const rub = (n) => Number(n).toLocaleString('ru-RU') + ' ₽';
+  const add = (n, label, value, links) => { if (value) items.push({ n, label, value, links: links || [] }); };
+  const part = (k) => {
+    const cnt = Number(c[`${k}_offers`]) || 0;
+    if (!cnt) return '';
+    let s = `предложений: ${cnt}`;
+    if (c[`${k}_price_min`] != null) s += ` · от ${rub(c[`${k}_price_min`])}`;
+    if (c[`${k}_in_stock`]) s += ' · в наличии';
+    return s;
+  };
+  add(4, 'Стекло фары', part('glass'), src.glass);
+  add(5, 'Корпус фары', part('housing'), src.housing);
+  add(6, 'Переходная рамка под bi-LED', part('adapter'), src.adapter);
+  const t = [];
+  if (c.difficulty != null) t.push(`сложность: ${c.difficulty}`);
+  if (c.needs_opening != null) t.push(`вскрытие: ${c.needs_opening ? 'да' : 'нет'}`);
+  if (c.hours_max != null) t.push(`до ${Number(c.hours_max)} ч`);
+  add(7, 'Сложность разбора фары', t.join(' · '), src.teardown);
+  add(8, 'Заводской герметик', c.sealant || c.sealant_raw, src.sealant);
+  if (c.adaptive != null) add(9, 'Адаптивный свет', c.adaptive ? 'адаптивный' : 'обычный', src.adaptive);
+  add(10, 'Штатный свет (ближний)',
+    [c.low_beam || c.low_beam_raw, c.factory_lens ? `линза: ${c.factory_lens}` : ''].filter(Boolean).join(' · '), src.low_beam);
+  add(11, 'Обманки / имитация штатного света',
+    part('canbus') + (part('canbus') && c.needs_canbus === true ? ' · нужны при замене на ксенон/LED' : ''), src.canbus);
+  const b = [];
+  if (c.bulb_sockets && c.bulb_sockets.length) b.push(`цоколи: ${c.bulb_sockets.join(', ')}`);
+  if (c.bulb_spots && c.bulb_spots.length) b.push(`места: ${c.bulb_spots.join(', ')}`);
+  add(12, 'Типы ламп в штатных приборах', b.join(' · '), src.bulb);
+  add(13, 'Фара оригинал', part('headlight_oem'), src.headlight_oem);
+  add(14, 'Фара OEM (аналог оригинала)', part('headlight_analog'), src.headlight_analog);
+  add(15, 'Штатные блоки розжига', part('ballast_oem'), src.ballast_oem);
+  add(16, 'Штатные блоки управления', part('control'), src.control);
+  add(17, 'Модули ДХО, поворота, боковой подсветки, колец', part('drl'), src.drl);
+  add(18, 'Набор для модернизации фар', part('kit'), src.kit);
+  return items;
 }
 
 // ── выпадающие списки: марка → модель → год ─────────────────────────────────
@@ -221,4 +322,4 @@ async function handle(req, res) {
 
 const PAGE = require('fs').readFileSync(require('path').join(__dirname, 'karta.html'), 'utf8');
 
-module.exports = { handle, lookup, options, findVehicles, mergeCards, baseModel };
+module.exports = { handle, lookup, options, findVehicles, mergeCards, baseModel, buildItems };

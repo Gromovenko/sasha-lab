@@ -30,3 +30,17 @@ test('записи одной машины склеиваются в одну к
   assert.strictEqual(out[0].housing_url, 'https://b.ru/y');
   assert.strictEqual(out[0].year_to, 2025);
 });
+
+test('разные годы и хвосты модели — всё равно одна карточка, а пустые пункты не показываются', () => {
+  const mk = (id, model, yf, yt, extra = {}) => ({ vehicle_id: id, make: 'kia', model, year_from: yf, year_to: yt, ...extra });
+  const out = karta.mergeCards([
+    mk(1, 'seltos', 2018, 2019, { glass_offers: 2, glass_price_min: 5000 }),
+    mk(2, 'SELTOS HALOGEN', 2023, 2025, { housing_offers: 1 }),
+  ]);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].year_from, 2018);
+  assert.strictEqual(out[0].year_to, 2025);
+  const items = karta.buildItems(out[0], { glass: [{ url: 'https://a.ru/1', host: 'a.ru', title: 'Стекло' }] });
+  assert.deepStrictEqual(items.map((i) => i.n), [4, 5]);
+  assert.strictEqual(items[0].links.length, 1);
+});
