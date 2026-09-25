@@ -40,7 +40,7 @@ test('разные годы и хвосты модели — всё равно �
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].year_from, 2018);
   assert.strictEqual(out[0].year_to, 2025);
-  const items = karta.buildItems(out[0], { glass: [{ url: 'https://a.ru/1', host: 'a.ru', title: 'Стекло' }] });
+  const items = karta.buildItems(out[0], { glassCols: { left: [{ url: 'https://a.ru/1', host: 'a.ru', title: 'Стекло' }], right: [], other: [] } });
   assert.deepStrictEqual(items.map((i) => i.n), [4, 5]);
-  assert.strictEqual(items[0].links.length, 1);
+  assert.strictEqual(items[0].cols.left.length, 1);
 });
