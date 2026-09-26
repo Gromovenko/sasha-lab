@@ -59,7 +59,8 @@ function partOf(s) {
     ['module', /модул|линз[аы]\s+(?!для)/i], ['lamp', /ламп/i]];
   const kind = (kinds.find(([, re]) => re.test(s)) || [null])[0];
   const purpose = /(для|под|установк\w*)\s+(би[-\s]?лед\s+|bi[-\s]?led\s+)?линз|замен\w*\s+линз/i.test(s) ? 'install_lens' : null;
-  return { part_kind: kind, purpose };
+  // Назначение — только если сказано прямо в заголовке; по виду детали не выводим (purpose_src: title | null).
+  return { part_kind: kind, purpose, purpose_src: purpose ? 'title' : null };
 }
 
 const normModel = (s) => s.toLowerCase().replace(/[^a-zа-яё0-9\s-]/gi, ' ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
@@ -212,11 +213,11 @@ async function rebuild() {
     const ch = obs.slice(i, i + 500);
     const vals = [], args = [];
     ch.forEach((o, j) => {
-      const b = j * 13;
-      vals.push(`(${Array.from({ length: 13 }, (_, k) => `$${b + k + 1}`).join(',')})`);
-      args.push(o.host, o.url, o.title, o.make, o.model, o.gen, o.year_from, o.year_to, o.restyle, o.light, o.afs, o.part_kind, o.purpose);
+      const b = j * 14;
+      vals.push(`(${Array.from({ length: 14 }, (_, k) => `$${b + k + 1}`).join(',')})`);
+      args.push(o.host, o.url, o.title, o.make, o.model, o.gen, o.year_from, o.year_to, o.restyle, o.light, o.afs, o.part_kind, o.purpose, o.purpose_src);
     });
-    await db.q(`INSERT INTO car_obs (host,url,title,make,model,gen,year_from,year_to,restyle,light,afs,part_kind,purpose) VALUES ${vals.join(',')} ON CONFLICT (url) DO NOTHING`, args);
+    await db.q(`INSERT INTO car_obs (host,url,title,make,model,gen,year_from,year_to,restyle,light,afs,part_kind,purpose,purpose_src) VALUES ${vals.join(',')} ON CONFLICT (url) DO NOTHING`, args);
   }
   const cars = consolidate(obs);
   for (const c of cars) {

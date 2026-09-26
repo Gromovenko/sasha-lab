@@ -107,14 +107,14 @@ async function lookup(params) {
   const ids = cat.filter((c) => sameFamily(card, c)).map((c) => c.vehicle_id);
   const cb = await carbase(card.make, card.model, year);
   const scope = genScope(cb.list, year);
-  const src = await sources(ids, scope);
+  const src = await sources(ids, scope, carIdsOf(cb.list));
   return { found: true, year, yearMiss, cards: [{
     // Годы в шапке — из базы автомобилей, если она эту машину знает: в справочнике
     // диапазон собран из заголовков и бывает шире реального («Camry 1981–2025»).
     make: card.make, model: card.model,
     year_from: cb.from || card.year_from, year_to: cb.to || card.year_to,
     base: cb.name ? { name: cb.name, hosts: cb.hosts, years: !!cb.from } : null,
-    scope: scope ? { from: scope.from, to: scope.to, codes: scope.codes } : null,
+    scope: scope ? { from: scope.from, to: scope.to, codes: scope.codes, by_car: src.scoped.general != null, general: src.scoped.general ?? null } : null,
     generations: cb.list, genMiss: !!year && !!cb.list.length && !cb.list.some((g) => g.match),
     confidence: card.confidence, confirmed: card.confirmed,
     shop: src.shop, items: buildItems(card, src),
@@ -180,6 +180,31 @@ const ALIVE = `(d.id IS NULL OR (d.skip_reason IS NULL AND (d.http_status IS NUL
 // год и база авто знает поколение, оставляем только то, что не противоречит ему:
 // явный год другого поколения или код кузова другого поколения (V40, XV55…) —
 // отбрасываем; без указания года и кода — оставляем (это «на модель в целом»).
+// Машины базы авто (cars), чьё поколение подходит выбранному году, и признак
+// «слой уже знает car_id» (миграция 013 + node harvest/run.js carmap).
+const carIdsOf = (list) => (list || []).filter((g) => g.match && g.id != null).map((g) => g.id);
+let HAS_CAR_ID = { at: 0, v: false };
+async function hasCarId() {
+  if (Date.now() - HAS_CAR_ID.at < 60_000) return HAS_CAR_ID.v;
+  try {
+    const r = await db.q(`SELECT count(*)::int n FROM information_schema.columns
+      WHERE column_name = 'car_id' AND table_name IN ('fitment', 'vehicle_parts', 'vehicle_links')`);
+    HAS_CAR_ID = { at: Date.now(), v: r[0].n === 3 };
+  } catch { HAS_CAR_ID = { at: Date.now(), v: false }; }
+  return HAS_CAR_ID.v;
+}
+// Привязка строки к поколению: своя машина — оставить; чужая машина — убрать;
+// car_id нет — решает прежний разбор названия (годы, код кузова), «на модель в целом».
+function carFilter(rows, carIds, textOk) {
+  const mine = new Set(carIds);
+  const out = [];
+  let general = 0;
+  for (const r of rows) {
+    if (r.car_id != null) { if (mine.has(r.car_id)) out.push(r); continue; }
+    if (textOk(r)) { out.push(r); general++; }
+  }
+  return { rows: out, general };
+}
 const genCodes = (gens) => [...new Set((gens || []).map((g) => (String(g).toLowerCase().match(/[a-z]{1,3}\d{2,3}/) || [])[0]).filter(Boolean))];
 function genScope(list, y) {
   y = Number(y) || null;
@@ -208,10 +233,12 @@ function genScope(list, y) {
   return scope;
 }
 
-async function sources(ids, scope) {
+async function sources(ids, scope, carIds = []) {
+  const byCar = !!(scope && carIds.length && await hasCarId());
+  const CID = byCar ? ', vp.car_id' : '';
   let parts = await db.q(
     `SELECT * FROM (
-       SELECT vp.kind, p.name, p.url, p.price_rub, p.available,
+       SELECT vp.kind, p.name, p.url, p.price_rub, p.available${CID},
               CASE WHEN vp.kind = 'bulb' THEN (SELECT string_agg(m[1], ' | ')
                      FROM regexp_matches(d.text, '\\n([^\\n]+)\\n\\s*[^\\n]*₽\\s*\\nКупить\\s*\\nКод:', 'g') m) END AS prods,
               row_number() OVER (PARTITION BY vp.kind ORDER BY (p.available IS TRUE) DESC,
@@ -221,21 +248,29 @@ async function sources(ids, scope) {
         WHERE vp.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'p.url')}) t
       WHERE rn <= ${scope ? 600 : 150}`, [ids]);
   let facts = await db.q(
-    `SELECT d.url, d.title, f.confidence, f.difficulty, f.needs_opening, f.hours, f.sealant,
+    `SELECT d.url, d.title${byCar ? ', f.car_id' : ''}, f.confidence, f.difficulty, f.needs_opening, f.hours, f.sealant,
             f.adaptive, f.low_beam_source
        FROM fitment f CROSS JOIN LATERAL unnest(f.evidence) e
        JOIN documents d ON d.id = e
       WHERE f.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'd.url')}
       ORDER BY f.confidence DESC, d.fetched_at DESC LIMIT 600`, [ids]);
   let shop = await db.q(
-    `SELECT l.url, l.title FROM vehicle_links l JOIN sources s ON s.id = l.source_id
+    `SELECT l.url, l.title${byCar ? ', l.car_id' : ''} FROM vehicle_links l JOIN sources s ON s.id = l.source_id
       WHERE l.vehicle_id = ANY ($1) AND s.kind = 'parts' AND (l.http_status IS NULL OR l.http_status = 200)
       ORDER BY CASE l.basis WHEN 'url' THEN 0 WHEN 'title' THEN 1 ELSE 2 END, l.url LIMIT 40`, [ids]);
   const scoped = {};
   if (scope) {
-    parts = parts.filter((r) => scope.ok(`${r.name} ${r.url}`));
-    facts = facts.filter((r) => scope.ok(`${r.title} ${r.url}`));
-    shop = shop.filter((r) => scope.ok(`${r.title} ${r.url}`));
+    if (byCar) {
+      const a = carFilter(parts, carIds, (r) => scope.ok(`${r.name} ${r.url}`));
+      const b = carFilter(facts, carIds, (r) => scope.ok(`${r.title} ${r.url}`));
+      const c = carFilter(shop, carIds, (r) => scope.ok(`${r.title} ${r.url}`));
+      parts = a.rows; facts = b.rows; shop = c.rows;
+      scoped.general = a.general + b.general + c.general;   // без car_id: «на модель в целом»
+    } else {
+      parts = parts.filter((r) => scope.ok(`${r.name} ${r.url}`));
+      facts = facts.filter((r) => scope.ok(`${r.title} ${r.url}`));
+      shop = shop.filter((r) => scope.ok(`${r.title} ${r.url}`));
+    }
     const first = (f) => { const r = facts.find((x) => x[f] != null); return r ? r[f] : null; };
     Object.assign(scoped, { on: true, difficulty: first('difficulty'), needs_opening: first('needs_opening'),
       hours: first('hours'), sealant: first('sealant'), adaptive: first('adaptive'), low_beam: first('low_beam_source') });
@@ -407,7 +442,7 @@ async function carbase(make, model, year) {
   const name = cbNameIn(cb, mk, vehiclesLib.slugify(model))
     || cbNameIn(cb, mk, vehiclesLib.slugify(baseModel(model)));
   if (!name) return none;
-  const rows = await db.q(`SELECT c.year_from, c.year_to, c.gens, c.hosts, c.n_hosts,
+  const rows = await db.q(`SELECT c.id, c.year_from, c.year_to, c.gens, c.hosts, c.n_hosts,
       coalesce((SELECT json_agg(json_build_object('light', v.light, 'afs', v.afs,
                    'restyle', v.restyle, 'n_hosts', v.n_hosts) ORDER BY v.n_hosts DESC, v.light)
                   FROM car_variants v WHERE v.car_id = c.id AND v.status = 'confirmed'), '[]'::json) AS variants
@@ -415,7 +450,7 @@ async function carbase(make, model, year) {
      ORDER BY c.year_from, c.year_to`, [mk, name]);
   const y = Number(year) || null;
   const list = rows.map((r) => ({
-    year_from: r.year_from, year_to: r.year_to, gens: (r.gens || []).slice(0, 6), n_hosts: r.n_hosts,
+    id: r.id, year_from: r.year_from, year_to: r.year_to, gens: (r.gens || []).slice(0, 6), n_hosts: r.n_hosts,
     variants: r.variants || [], match: !!y && y >= r.year_from && y <= r.year_to,
   }));
   const hosts = [...new Set(rows.flatMap((r) => r.hosts || []))].sort();
@@ -613,4 +648,4 @@ async function handle(req, res) {
 
 const PAGE = require('fs').readFileSync(require('path').join(__dirname, 'karta.html'), 'utf8');
 
-module.exports = { handle, lookup, options, carbase, findVehicles, mergeCards, baseModel, buildItems, cbNameIn, genScope };
+module.exports = { handle, lookup, options, carbase, findVehicles, mergeCards, baseModel, buildItems, cbNameIn, genScope, carFilter, carIdsOf };

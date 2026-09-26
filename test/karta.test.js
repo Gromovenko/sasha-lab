@@ -73,3 +73,12 @@ test('год выбирает поколение: чужие годы и код�
   assert.ok(sc.ok('Лампа H11 для Camry'));                     // цоколь ≠ код кузова
   assert.strictEqual(karta.genScope(list, null), null);
 });
+
+test('H3: пункты 4–18 привязаны к поколению по car_id, без car_id — «на модель в целом»', () => {
+  const { carFilter, carIdsOf } = require('../seo/karta');
+  assert.deepStrictEqual(carIdsOf([{ id: 2, match: true }, { id: 1, match: false }, { match: true }]), [2]);
+  const rows = [{ n: 'v50', car_id: 2 }, { n: 'v40', car_id: 1 }, { n: 'общая', car_id: null }, { n: 'xv30 общая', car_id: null }];
+  const r = carFilter(rows, [2], (x) => !/xv30/.test(x.n));
+  assert.deepStrictEqual(r.rows.map((x) => x.n), ['v50', 'общая']);
+  assert.strictEqual(r.general, 1);
+});

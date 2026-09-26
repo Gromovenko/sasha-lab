@@ -118,6 +118,7 @@ function compare(human, res) {
   rows.push({ label: 'Вид детали', want: human.kind, got: gotKind, ok: gotKind === human.kind, why: 'вид детали берётся по слову в заголовке (carbase.js partOf)' });
   const gotPurpose = r.purpose === 'install_lens' ? 'установка линз' : 'не определено';
   rows.push({ label: 'Назначение', want: human.purpose, got: gotPurpose, ok: gotPurpose === human.purpose, why: 'назначение — по словам «для/под линз», «замена линз»' });
+  rows.push({ label: 'Источник назначения', want: human.purpose ? 'title' : '—', got: r.purpose_src || '—', ok: (r.purpose_src || '—') === (human.purpose ? 'title' : '—'), why: 'purpose_src = title, только если назначение прямо в заголовке' });
   return rows;
 }
 

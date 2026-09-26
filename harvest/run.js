@@ -31,6 +31,8 @@ const http = require('./http');
 const links = require('./links');
 const catalog = require('./catalog');
 const carbase = require('./carbase');
+const carmap = require('./carmap');
+const titleCheck = require('./title-check');
 
 const HELP = `
 sasha-lab · сбор базы знаний
@@ -48,6 +50,8 @@ sasha-lab · сбор базы знаний
                              сложность разбора, заводской герметик, адаптивный свет, штатный
                              ближний, обманки и цоколи ламп — к каждому пункту рабочая
                              ссылка (--all — включая пустые)
+  carmap                        мост vehicles → cars, car_id в fitment/vehicle_parts/vehicle_links
+  title-check [файл] [--sample N]  выборка 60 заголовков для проверки / подсчёт доли верных
   carbase [--csv файл] [--all]  база авто марка/модель/год из каталогов рамок, сверка ≥2 сайтов
   catalog --check N          перепроверить живость N ссылок из карточки
   stats                      что накоплено
@@ -188,6 +192,27 @@ async function main() {
         const rows = await catalog.exportRows({ onlyWithData: !argv.includes('--all') });
         require('fs').writeFileSync(out, '\ufeff' + catalog.toCsv(rows));
         console.log(`  таблица: ${out} (строк ${rows.length})`);
+      }
+      break;
+    }
+    case 'carmap': {
+      const r = await carmap.rebuild();
+      console.log(`  записей справочника ${r.vehicles}: сопоставлено ${r.mapped} (${(100 * r.mapped / (r.vehicles || 1)).toFixed(1)}%),`
+        + ` exact ${r.exact}, fuzzy ${r.fuzzy}, без пары ${r.unmatched} → ${r.csv}`);
+      for (const [t, x] of Object.entries(r.layers)) console.log(`  ${t}: car_id у ${x.mapped} из ${x.total}`);
+      break;
+    }
+    case 'title-check': {
+      const file = argv[1] && !argv[1].startsWith('--') ? argv[1] : null;
+      if (file) {
+        const r = titleCheck.score(require('fs').readFileSync(file, 'utf8'));
+        console.log(`  проверено ${r.total}, верных ${r.ok} (${r.pct}%)`);
+        for (const [k, x] of Object.entries(r.byMake)) console.log(`  марка ${k}: ${x.ok}/${x.n}`);
+        for (const [k, x] of Object.entries(r.byHost)) console.log(`  сайт ${k}: ${x.ok}/${x.n}`);
+      } else {
+        const out = flag('out', 'seo/data/title-parse-check.csv');
+        const n = await titleCheck.sample({ n: Number(flag('sample', 60)), out });
+        console.log(`  выборка ${n} заголовков → ${out}`);
       }
       break;
     }

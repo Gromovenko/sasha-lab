@@ -76,3 +76,10 @@ test('Mark X 120 и Pajero Sport 3 — составные модели', () => {
   assert.strictEqual(parseTitle('Переходные рамки Toyota Mark X 120 2004-2009', 'a.ru').model, 'mark-x');
   assert.strictEqual(parseTitle('Переходные рамки Mitsubishi Pajero Sport 3 2015-2020', 'a.ru').model, 'pajero-sport');
 });
+
+test('H2: purpose_src = title только при прямом указании, по виду детали не выводится', () => {
+  const a = parseTitle('Переходные рамки для линз TOYOTA CAMRY V50 2011-2015', 'luxsar.ru');
+  assert.deepStrictEqual([a.purpose, a.purpose_src], ['install_lens', 'title']);
+  const b = parseTitle('Переходные рамки TOYOTA CAMRY V50 2011-2015', 'luxsar.ru');
+  assert.deepStrictEqual([b.part_kind, b.purpose, b.purpose_src], ['frame', null, null]);
+});
