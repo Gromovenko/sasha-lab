@@ -443,7 +443,7 @@ async function vehicleData() {
       FROM vehicles v JOIN fitment f ON f.vehicle_id = v.id
      GROUP BY v.id
     HAVING count(*) FILTER (WHERE f.status = 'confirmed') > 0
-        OR (count(*) >= $1 AND bool_or(EXISTS (
+        OR (count(*) FILTER (WHERE f.lens <> '') >= $1 AND bool_or(EXISTS (
               SELECT 1 FROM documents d
                WHERE d.id = ANY (f.evidence)
                  AND COALESCE(d.meta->>'lang', 'ru') = 'ru')))

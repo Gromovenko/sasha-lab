@@ -164,7 +164,7 @@ const SOURCES = [
   // дочерних картах. Прежние 300 были моей оценкой при заведении, не пределом
   // сайта: это крупнейший непрочитанный пласт во всём проекте.
   { host: 'daoptika.ru', kind: 'works', title: 'DAoptika',
-    seeds: ['https://daoptika.ru/'], include: /./, delayMs: 1000, maxPages: 19000 },
+    seeds: ['https://daoptika.ru/'], include: /./, delayMs: 3000, maxPages: 19000 },
   { host: 'parafara.ru', kind: 'works', title: 'Parafara',
     seeds: ['https://parafara.ru/'], include: /./, delayMs: 1000, maxPages: 400 },
   { host: '1st-garage.ru', kind: 'works', title: '1st Garage',
@@ -185,7 +185,7 @@ const SOURCES = [
   // потолке 400, то есть сайт оборван не собой, а нашим числом. Потолок поднят
   // до 2000: ниже этого «собрано = потолок» ничего не говорит о самом сайте.
   { host: 'xenonru.ru', kind: 'works', title: 'XenonRu',
-    seeds: ['http://xenonru.ru/'], include: /./, delayMs: 1000, maxPages: 2000 },
+    seeds: ['http://xenonru.ru/'], include: /./, delayMs: 1000, maxPages: 6000 },
   { host: 'fara-russia.ru', kind: 'works', title: 'Fara Russia',
     seeds: ['https://fara-russia.ru/'], include: /./, delayMs: 20000, maxPages: 300 },
 
@@ -292,6 +292,12 @@ function applySpeedPlan(list, file = SPEED_PLAN) {
 // захода и то, что у нас лежит в базе.
 const EXHAUSTED = {
   'www.xenonshop.ru': 'карта 2393, в базе 2517',
+  // 26.09.2026: последние заходы дали 0 новых страниц.
+  'legal-xenon.ru': 'карта отдаёт 0; обход по ссылкам: 6125 живых, второй заход 22.09 дал +0',
+  'bgt-svet.ru': 'карты нет, обход по ссылкам: 184 живых + 14 мёртвых, новых нет с 20.09',
+  'svetodiod96.ru': 'карта ~9901, в базе 9901 (9892 живых + 9 мёртвых)',
+  'xenonshop54.ru': 'в базе 5277 живых + 405 мёртвых; ~460 адресов площадка стабильно отказывает (698→462 за два захода)',
+  'www.autooptica.ru': 'уникальных адресов 745, в базе 580 живых + 29 мёртвых; ~150 площадка стабильно отказывает',
   // Расхождение «карта 3374, а в базе 1186» — не пропуск, а дубли в самой карте
   // площадки: проверено 24.09.2026 (3426 записей, 1209 уникальных адресов), из
   // них 52 закрыты robots. То есть уникальные адреса у нас все.
@@ -346,7 +352,7 @@ for (const s of SOURCES) {
   const why = EXHAUSTED[s.host];
   if (!why) continue;
   s.enabled = false;
-  s.note = `исчерпан (24.09.2026): ${why} — последний заход дал 0 новых страниц`;
+  s.note = `исчерпан (26.09.2026): ${why} — последний заход дал 0 новых страниц`;
 }
 
 applySpeedPlan(SOURCES);

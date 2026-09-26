@@ -93,6 +93,37 @@ const PART_KINDS_FIRST = [
 const HEADLIGHT_RE = /^(?:купить\s+)?фара\s+[A-Za-z]/i;
 const HEADLIGHT_ANALOG_RE = /аналог|\b(?:depo|dept|tyc|junyan|eagle\s*eyes?|sonar|fpk|carbuy)\b|оригинальн[\wа-яё]*\s+качеств|копи[яию]|replica/i;
 const HEADLIGHT_OEM_RE = /оригинал|\boem\b|genuine|original/i;
+// electro-kot.ru: 27 тыс. страниц вида «Светодиодные лампы для Peugeot 408 with Xenon
+// 2010-2016 в Ближний свет». Линзы там нет, но пометка комплектации в названии —
+// готовый факт о штатном свете этой машины (пункт 10 карточки). Пишем его как
+// fitment с пустой линзой; страницы /baza такие строки в порог фактов не считают.
+const LAMP_TITLE_RE = /^Светодиодные лампы для (.+?)(?:\s+в\s+[^\d]+?)?(?:\s+купить)?\s*$/i;
+const LAMP_MARK_RE = /\s+(?:with|с)\s+(xenon|led|ксенон\w*|галоген\w*)\b/i;
+const LAMP_TITLE_SOURCE = (w) => /xenon|ксенон/i.test(w) ? 'штатный ксенон'
+  : /led/i.test(w) ? 'штатный led' : 'галоген';
+// Модель на electro-kot часто цифровая («Peugeot 408») или с кодом кузова
+// («BMW 3 (E46)»), поэтому общий detect() её не видит: разбираем строку каталога
+// по её собственному шаблону «для МАРКА МОДЕЛЬ [with Xenon] ГОДЫ [в МЕСТО]».
+function parseLampTitle(title) {
+  const m = String(title || '').match(LAMP_TITLE_RE);
+  if (!m) return null;
+  const mark = m[1].match(LAMP_MARK_RE);
+  if (!mark) return null;
+  const y = m[1].match(vehicles.YEAR_RE);
+  let body = m[1].slice(0, y ? y.index : undefined).replace(LAMP_MARK_RE, ' ');
+  body = body.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = body.split(' ');
+  let make = null; let n = 0;
+  for (const k of [2, 1]) { make = vehicles.makeOf(words.slice(0, k).join(' ')); if (make) { n = k; break; } }
+  const model = words.slice(n).join(' ').replace(/[-–—,.:;]+$/, '').trim();
+  if (!make || model.length < 2) return null;
+  const a = y ? Number(y[1]) : null; const b = y && y[2] ? Number(y[2]) : null;
+  return {
+    source: LAMP_TITLE_SOURCE(mark[1]),
+    vehicle: { make, model, slug: `${make}-${vehicles.slugify(model)}`, yearFrom: a, yearTo: b || a,
+      hits: 1, snippet: String(title).slice(0, 200) },
+  };
+}
 const kindOf = (name) => {
   for (const [re, kind, stop] of PART_KINDS_FIRST) if (re.test(name) && !(stop && stop.test(name))) return kind;
   const base = (PART_KINDS.find(([re]) => re.test(name)) || [null, 'other'])[1];
@@ -147,6 +178,18 @@ function parseDoc(doc) {
     }
   }
 
+  const lampTitle = isPart ? parseLampTitle(doc.title) : null;
+  if (lampTitle) {
+    // Заголовок каталога точнее общего поиска марки в тексте страницы: он же
+    // и годы даёт правильные, и не плодит «mercedes-sprinter» рядом с «-906».
+    out.vehicles = [lampTitle.vehicle];
+    out.fitment = [{
+      vehicleSlug: lampTitle.vehicle.slug, lens: '', approach: '', headlight: null,
+      needs_opening: null, difficulty: null, hours: null, sealant: null, adaptive: null,
+      low_beam_source: lampTitle.source, factory_lens: null, confidence: 0.6,
+    }];
+  }
+
   if (isPart && doc.title) {
     const price = doc.meta.price ?? null;
     if (price) {
@@ -190,4 +233,4 @@ async function run({ limit = 500, reparse = false } = {}) {
   return stat;
 }
 
-module.exports = { parseDoc, run, kindOf, lenses, LENS };
+module.exports = { parseLampTitle, parseDoc, run, kindOf, lenses, LENS };

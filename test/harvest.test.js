@@ -315,10 +315,10 @@ test('sources: исчерпанные источники выключены, н�
     const src = SOURCES.find((s) => s.host === host);
     assert.ok(src, `${host} есть в реестре`);
     assert.equal(src.enabled, false, `${host} выключен`);
-    assert.match(src.note, /исчерпан \(24\.09\.2026\)/, `${host} объясняет причину`);
+    assert.match(src.note, /исчерпан \(\d\d\.09\.2026\)/, `${host} объясняет причину`);
   }
   // Недобранные источники выключение не задело — иначе сбор встал бы весь.
-  for (const host of ['vdf-light.ru', 'svetodiod96.ru', 'daoptika.ru', 'xenonru.ru', 'legal-xenon.ru']) {
+  for (const host of ['vdf-light.ru', 'daoptika.ru', 'xenonru.ru']) {
     assert.notEqual(SOURCES.find((s) => s.host === host).enabled, false, `${host} остался в заходе`);
   }
 });
@@ -431,4 +431,17 @@ test('карточка машины: пункты 13–18 в выгрузке с
     assert.ok(catalog.LINK_COLS.includes(`${k}_url`));
   }
   assert.equal(line.split(';').length, head.split(';').length);
+});
+
+test('electro-kot: пометка with Xenon в заголовке даёт штатный свет, без пометки — ничего', () => {
+  const facts = require('../harvest/facts');
+  const doc = (title) => ({ title, text: 'x', url: 'u', source_id: 1, meta: { kind: 'parts', price: 100 } });
+  const a = facts.parseDoc(doc('Светодиодные лампы для Peugeot 408 with Xenon 2010-2016 в Дальний свет тип 2'));
+  assert.deepEqual(a.vehicles.map((v) => [v.slug, v.yearFrom, v.yearTo]), [['peugeot-408', 2010, 2016]]);
+  assert.equal(a.fitment[0].low_beam_source, 'штатный ксенон');
+  assert.equal(a.fitment[0].lens, '');
+  const b = facts.parseDoc(doc('Светодиодные лампы для BMW 3 (E46) with xenon 2001-2005'));
+  assert.equal(b.vehicles[0].slug, 'bmw-3-e46');
+  const c = facts.parseDoc(doc('Светодиодные лампы для Toyota C-HR 2016-2019 в Ближний свет'));
+  assert.equal(c.fitment.length, 0);
 });
