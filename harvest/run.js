@@ -30,6 +30,7 @@ const db = require('../seo/lib/db');
 const http = require('./http');
 const links = require('./links');
 const catalog = require('./catalog');
+const carbase = require('./carbase');
 
 const HELP = `
 sasha-lab · сбор базы знаний
@@ -47,6 +48,7 @@ sasha-lab · сбор базы знаний
                              сложность разбора, заводской герметик, адаптивный свет, штатный
                              ближний, обманки и цоколи ламп — к каждому пункту рабочая
                              ссылка (--all — включая пустые)
+  carbase [--csv файл] [--all]  база авто марка/модель/год из каталогов рамок, сверка ≥2 сайтов
   catalog --check N          перепроверить живость N ссылок из карточки
   stats                      что накоплено
 
@@ -185,6 +187,18 @@ async function main() {
       if (out) {
         const rows = await catalog.exportRows({ onlyWithData: !argv.includes('--all') });
         require('fs').writeFileSync(out, '\ufeff' + catalog.toCsv(rows));
+        console.log(`  таблица: ${out} (строк ${rows.length})`);
+      }
+      break;
+    }
+    case 'carbase': {
+      const r = await carbase.rebuild();
+      console.log(`  страниц рамок ${r.pages}, разобрано ${r.parsed}, машин ${r.cars}:`
+        + ` ${r.byStatus.map((x) => `${x.status} ${x.n}`).join(', ')}`);
+      const out = flag('csv');
+      if (out) {
+        const rows = await carbase.exportRows({ onlyConfirmed: !argv.includes('--all') });
+        require('fs').writeFileSync(out, '\ufeff' + carbase.toCsv(rows));
         console.log(`  таблица: ${out} (строк ${rows.length})`);
       }
       break;
