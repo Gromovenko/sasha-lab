@@ -325,6 +325,22 @@ async function route(req, res) {
     return send(302, '', { Location: `/seo/?msg=${encodeURIComponent('убрано из очереди')}` }), true;
   }
 
+  if (url.pathname === '/seo/parse' || url.pathname === '/seo/parse.json' || url.pathname === '/seo/parse-samples.json') {
+    const tr = require('../harvest/carbase-trace');
+    const jsonOut = (o) => { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }); res.end(JSON.stringify(o)); };
+    if (url.pathname === '/seo/parse-samples.json') return jsonOut(await tr.samples()), true;
+    if (url.pathname === '/seo/parse.json') {
+      const title = String(url.searchParams.get('title') || '').slice(0, 400);
+      const host = String(url.searchParams.get('host') || '').slice(0, 80);
+      const d = tr.traceTitle(title, host);
+      if (title === tr.REFERENCE.title) { d.compare = tr.compare(tr.REFERENCE.human, d.result); d.path = await tr.pathOf(title, host); }
+      return jsonOut(d), true;
+    }
+    // страница без слэша в конце нужна, чтобы относительные адреса parse.json работали
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+    return res.end(require('fs').readFileSync(require('path').join(__dirname, 'parse.html'), 'utf8')), true;
+  }
+
   if (url.pathname === '/seo/data.json') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify({ summary: await jobs.summary(),

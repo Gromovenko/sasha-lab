@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Как разбирается заголовок · sasha-lab</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2430;--mut:#667085;--ok:#137a3f;--bad:#b42318;--warn:#a15c00;--line:#e3e7ee;--acc:#1f5eff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:20px 16px 60px}h1{font-size:24px;margin:.2em 0}h2{font-size:19px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:16px 0}
+.sub{color:var(--mut);font-size:14px}.row{display:flex;gap:8px}input[type=text]{flex:1;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+button{font:inherit;padding:10px 16px;border:0;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:15px}th,td{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600;border-top:0}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}.note{color:var(--warn);font-size:14px}code,.mono{font-family:ui-monospace,Menlo,monospace;font-size:13.5px;background:#f0f2f6;padding:1px 5px;border-radius:4px;word-break:break-word}
+.hl{padding:1px 3px;border-radius:4px}.f-make{background:#d6e4ff}.f-year{background:#ffe8b3}.f-gen{background:#d9f2dc}.f-afs{background:#f7d4f0}.f-kind{background:#e5e7eb}
+.legend span{margin-right:10px;font-size:13px}.big{font-size:20px;line-height:1.9}
+.chip{display:inline-block;padding:2px 9px;border-radius:99px;font-size:13px;background:#eef1f6;margin:2px 4px 2px 0}.chip.g{background:#dcf5e4;color:var(--ok)}.chip.r{background:#fde4e1;color:var(--bad)}.chip.y{background:#fff0d0;color:var(--warn)}
+.steps{display:grid;gap:8px}.step{display:grid;grid-template-columns:170px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--line)}.step:first-child{border-top:0}
+.step b{display:block}@media(max-width:700px){.step{grid-template-columns:1fr}}
+details{margin:6px 0}summary{cursor:pointer;font-weight:600}
+</style></head><body><main>
+<h1>Как разбирается заголовок товара</h1>
+<p class="sub">Эталон на живом коде: тот же <code>parseTitle</code>, что строит базу автомобилей. Ничего не записывается. Вставьте любой заголовок и нажмите «Разобрать».</p>
+<div class="card"><div class="row"><input id="t" type="text"><input id="h" type="text" style="max-width:170px" placeholder="сайт, напр. luxsar.ru"><button id="go">Разобрать</button></div>
+<p class="sub" style="margin:8px 0 0">Подсказка: в базу авто попадают только заголовки со словом «рамк».</p></div>
+<div id="out"></div>
+<div class="card" id="rules"><h2>Общие правила и слабые места</h2>
+<ol>
+<li><b>Один заголовок — одно наблюдение.</b> Из строки вынимаются марка, модель, код кузова, годы и комплектация (свет, AFS, рестайл). Ничего не достраивается.</li>
+<li><b>Модель — первое слово после марки.</b> Исключения — список многословных («Land Cruiser Prado») и пары «слово+номер» («CX-5», «Tiggo 7»). Редкая двухсловная модель может распасться.</li>
+<li><b>Код кузова</b> — латинские слова из 1–6 знаков после модели. Написания «V50» и «XV50» считаются разными.</li>
+<li><b>«Нет слова про AFS» значит «неизвестно», а не «нет AFS».</b> «Нет» ставится только при явном «без AFS».</li>
+<li><b>Годы</b> из заголовка. У сайтов границы поколения расходятся (2011–2014 и 2011–2015), поэтому при сведении допуск ±1 год.</li>
+<li><b>Подтверждение</b> машины — минимум два разных сайта с совпавшими годами. Комплектация считается отдельно, свой счёт источников.</li>
+<li><b>Вид детали не хранится.</b> В базу авто идут только рамки; стёкла, корпуса, наборы и лампы не учитываются.</li>
+<li><b>Без годов</b> (vdf-light, часть aozoom) машина подтверждает только марку и модель.</li></ol></div>
+</main>
+<script>
+const $=(i)=>document.getElementById(i),esc=(s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const REF={title:'Переходные рамки для линз TOYOTA CAMRY V50 2011-2015 с AFS',host:'luxsar.ru'};
+function marked(title,r){
+  if(!r)return esc(title);let s=esc(title);const put=(re,cls)=>{s=s.replace(re,(m)=>`<span class="hl ${cls}">${m}</span>`)};
+  put(/рамк\S*/i,'f-kind');
+  if(r.make)put(new RegExp('(?<![A-Za-zА-Яа-я])'+r.make.replace(/-/g,'[- ]?')+'(?![A-Za-zА-Яа-я])','i'),'f-make');
+  if(r.model)put(new RegExp('(?<![A-Za-zА-Яа-я])'+r.model.replace(/-/g,'[- ]?')+'(?![A-Za-zА-Яа-я])','i'),'f-make');
+  if(r.gen)put(new RegExp('(?<![A-Za-z0-9])'+r.gen.replace(/-/g,'[- ]?')+'(?![A-Za-z0-9])','i'),'f-gen');
+  put(/(?:19|20)\d{2}\s*[-–—]\s*(?:(?:19|20)\d{2}|н\.?\s?в\.?)/,'f-year');
+  put(/(?<![A-Za-z])(без\s+)?afs(?![A-Za-z])|адаптив\S*/i,'f-afs');
+  return s;
+}
+function trace(d){
+  const r=d.result;
+  return `<div class="card"><h2>1. Что вынул код</h2><div class="big">${marked(d.title,r)}</div>
+  <p class="legend"><span class="hl f-make">марка, модель</span><span class="hl f-gen">код кузова</span><span class="hl f-year">годы</span><span class="hl f-afs">AFS</span><span class="hl f-kind">вид детали</span></p>
+  ${d.rejected?`<p class="bad">Заголовок отброшен: ${esc(d.rejected)}</p>`:`<p>${r?`<span class="chip g">${esc(r.make)}</span><span class="chip g">${esc(r.model)}</span>${r.gen?`<span class="chip g">кузов ${esc(r.gen)}</span>`:'<span class="chip y">кузов —</span>'}${r.year_from?`<span class="chip g">${r.year_from}–${r.year_to}</span>`:'<span class="chip y">годов нет</span>'}<span class="chip ${r.afs===true?'g':'y'}">AFS: ${r.afs===null?'неизвестно':r.afs?'есть':'нет'}</span>${r.light?`<span class="chip g">свет: ${esc(r.light)}</span>`:''}${r.restyle?`<span class="chip g">${esc(r.restyle)}</span>`:''}`:''}</p>`}
+  ${d.same?'':'<p class="bad">Внимание: трассировка расходится с боевым parseTitle.</p>'}</div>
+  <div class="card"><h2>2. Шаги разбора</h2><div class="steps">${d.steps.map(s=>`<div class="step"><div><b>${esc(s.name)}</b></div><div><div class="sub">${esc(s.rule)}</div><div class="mono">${esc(s.out)}</div>${s.note?`<div class="note">${esc(s.note)}</div>`:''}</div></div>`).join('')}</div></div>`;
+}
+function cmpTable(rows){
+  return `<div class="card"><h2>3. Как прочёл человек и как прочитал код</h2><table><tr><th>Поле</th><th>Человек</th><th>Код</th><th></th></tr>${rows.map(x=>`<tr><td>${esc(x.label)}</td><td>${esc(x.want)}</td><td>${esc(x.got)}</td><td>${x.ok?'<span class="ok">совпало</span>':`<span class="bad">расхождение</span><div class="note">${esc(x.why)}</div>`}</td></tr>`).join('')}</table></div>`;
+}
+function pathBlock(p){
+  if(!p)return'';const st=(c)=>c==='confirmed'?'<span class="chip g">подтверждена</span>':`<span class="chip y">${esc(c)}</span>`;
+  const oneCar=p.cars.filter(c=>c.gens&&c.gens.length||true);
+  return `<div class="card"><h2>4. Путь записи по базе (живые данные)</h2>
+  <div class="steps">
+  <div class="step"><div><b>Шаг 1. Страница</b></div><div>${p.docs.length?p.docs.map(d=>`<div class="mono">${esc(d.host)} · ${esc(d.url)} · код ${d.http_status}</div>`).join(''):'<div class="note">Такой заголовок в собранных страницах не найден.</div>'}</div></div>
+  <div class="step"><div><b>Шаг 2. Наблюдения</b></div><div class="sub">Строки <code>car_obs</code> по этой машине и близким годам: каждый сайт — своя строка.</div><table><tr><th>Сайт</th><th>Кузов</th><th>Годы</th><th>AFS</th></tr>${p.obs.map(o=>`<tr><td>${esc(o.host)}</td><td>${esc(o.gen||'—')}</td><td>${o.year_from?o.year_from+'–'+o.year_to:'—'}</td><td>${o.afs===null?'?':o.afs?'есть':'нет'}</td></tr>`).join('')||'<tr><td colspan=4>нет</td></tr>'}</table></div>
+  <div class="step"><div><b>Шаг 3. Машина</b></div><div class="sub">Наблюдения склеены по совпавшим годам (допуск ±1). Подтверждение — от двух сайтов.</div><table><tr><th>Годы</th><th>Кузова</th><th>Сайты, подтвердившие годы</th><th>Статус</th></tr>${p.cars.map(c=>`<tr><td>${c.year_from?c.year_from+'–'+c.year_to:'—'}</td><td>${esc((c.gens||[]).join(', ')||'—')}</td><td>${esc((c.hosts||[]).join(', ')||'—')} (${c.n_hosts})</td><td>${st(c.status)}</td></tr>`).join('')}</table></div>
+  <div class="step"><div><b>Шаг 4. Комплектации</b></div><div class="sub">Свет × AFS × рестайл, у каждой свой счёт сайтов.</div><table><tr><th>Машина</th><th>Свет</th><th>AFS</th><th>Рестайл</th><th>Сайты</th></tr>${p.variants.map(v=>{const c=p.cars.find(c=>c.id===v.car_id);return`<tr><td>${c?c.year_from+'–'+c.year_to:''}</td><td>${esc(v.light||'?')}</td><td>${v.afs===null?'?':v.afs?'есть':'нет'}</td><td>${esc(v.restyle||'—')}</td><td>${(v.hosts||[]).length} · ${st(v.status)}</td></tr>`}).join('')||'<tr><td colspan=5>нет</td></tr>'}</table></div>
+  <div class="step"><div><b>Шаг 5. Карточка /karta</b></div><div>${p.karta&&p.karta.title?`<div class="mono">${esc(p.karta.title)} · годы ${esc(p.karta.years.join('–'))}</div><p class="sub">Годы карточки берутся из базы авто, если она знает модель.</p>`:'<div class="note">Карточка не найдена.</div>'}<p><a href="/karta?make=toyota&model=camry&year=2012">Открыть /karta для Camry 2012</a></p></div></div>
+  </div></div>`;
+}
+function samplesBlock(list){
+  return `<div class="card"><h2>5. Десять заголовков разных типов</h2><p class="sub">Случайные заголовки из базы: с годами и без, с AFS и без, стекло вместо рамки, две машины в заголовке. Нажмите строку, чтобы открыть шаги.</p>
+  ${list.map(s=>{const r=s.result;return`<details><summary>${esc(s.label)}: ${r?`<span class="ok">принят</span> · ${esc(r.make)} ${esc(r.model)} ${r.gen?esc(r.gen):''} ${r.year_from?r.year_from+'–'+r.year_to:'без годов'} · AFS ${r.afs===null?'?':r.afs?'есть':'нет'}`:`<span class="bad">отброшен</span> · ${esc(s.rejected||'')}`}</summary><div class="mono" style="margin:6px 0">${esc(s.title)}</div>
+  <table>${s.steps.slice(1).map(x=>`<tr><td style="width:170px">${esc(x.name)}</td><td class="mono">${esc(x.out)}${x.note?`<div class="note">${esc(x.note)}</div>`:''}</td></tr>`).join('')}</table></details>`}).join('')}</div>`;
+}
+async function run(){
+  const title=$('t').value.trim(),host=$('h').value.trim();
+  $('out').innerHTML='<p class="sub">Считаю…</p>';
+  const isRef=title===REF.title;
+  const q=new URLSearchParams({title,host});
+  const d=await (await fetch('/seo/parse.json?'+q)).json();
+  let html=trace(d);
+  if(isRef){html+=cmpTable(d.compare)+pathBlock(d.path);}
+  else if(d.result){html+=`<div class="card"><h2>3. Путь записи</h2><p class="sub">Сравнение с эталоном человека и путь по базе показываются для заголовка-примера. Вставьте его: <a href="#" id="ref">${esc(REF.title)}</a></p></div>`;}
+  $('out').innerHTML=html;const a=$('ref');if(a)a.onclick=(e)=>{e.preventDefault();$('t').value=REF.title;$('h').value=REF.host;run()};
+  if(isRef){const s=await (await fetch('/seo/parse-samples.json')).json();$('out').insertAdjacentHTML('beforeend',samplesBlock(s));}
+}
+$('t').value=REF.title;$('h').value=REF.host;$('go').onclick=run;$('t').onkeydown=(e)=>{if(e.key==='Enter')run()};run();
+</script></body></html>

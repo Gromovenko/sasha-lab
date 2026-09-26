@@ -225,4 +225,5 @@ const toCsv = (rows) => {
   return [cols.join(';')].concat(rows.map((r) => cols.map((c) => esc(r[c])).join(';'))).join('\n');
 };
 
-module.exports = { parseTitle, consolidate, rebuild, exportRows, toCsv, lightOf, years };
+module.exports = { parseTitle, consolidate, rebuild, exportRows, toCsv, lightOf, years,
+  MAKE_RE, MULTI, NAME_NUM, SERIES, normModel };
