@@ -112,11 +112,12 @@
  // карточка одна; строки только с данными, у каждой — список ссылок на источники
  function card(c,yr){
   var years=c.year_from?(c.year_from+'–'+(c.year_to||'н.в.')):'';
-  var rows=c.items.map(function(i){
+  var SHOW={4:1,5:1,6:1,12:1};
+  var rows=c.items.filter(function(i){return SHOW[i.n];}).map(function(i){
    return '<tr><td class="n">'+i.n+'</td><td class="l">'+esc(i.label)+'</td><td><b>'+esc(i.value)+'</b>'+(i.rows&&i.rows.length?spots(i.rows):i.cols?glass(i.cols):links(i.links))+'</td></tr>';
   }).join('');
   return '<div class="card"><div class="head"><b>'+esc(cap(c.make))+' '+esc(cap(c.model))+'</b>'+
-   '<span>'+years+'</span></div>'+gens(c)+
+   '<span>'+years+'</span></div>'+
    (rows?'<table>'+rows+'</table>':'<div class="msg">По этой машине пунктов с данными пока нет.</div>')+'</div>';
  }
 
