@@ -45,6 +45,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cachePath = (url) =>
   path.join(CACHE, crypto.createHash('sha1').update(url).digest('hex').slice(0, 2),
     crypto.createHash('sha1').update(url).digest('hex') + '.html');
+// Кэш хранится сжатым (.html.gz, ~8× меньше: 45 ГБ сырого HTML на проде съели
+// диск). Старые несжатые .html читаются как раньше — их пережимает
+// scripts/compress-harvest-cache.js.
+const gzPath = (file) => file + '.gz';
+function cacheFile(url) {
+  const file = cachePath(url);
+  if (fs.existsSync(gzPath(file))) return { file: gzPath(file), gz: true };
+  if (fs.existsSync(file)) return { file, gz: false };
+  return null;
+}
 
 // Часть источников (Drive2 за DDoS-Guard) отвечает не страницей, а js-челленджем,
 // если User-Agent не похож на браузер. Поэтому UA задаётся на источник.
@@ -173,9 +183,15 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   maxBytes = 4 * 1024 * 1024 } = {}) {
   const u = new URL(url);
   const file = cachePath(url);
-  if (useCache && fs.existsSync(file)) {
-    const age = (Date.now() - fs.statSync(file).mtimeMs) / 86400000;
-    if (age < maxAgeDays) return { url, status: 200, body: fs.readFileSync(file, 'utf8'), fromCache: true };
+  const hit = useCache ? cacheFile(url) : null;
+  if (hit) {
+    const age = (Date.now() - fs.statSync(hit.file).mtimeMs) / 86400000;
+    if (age < maxAgeDays) {
+      try {
+        const buf = fs.readFileSync(hit.file);
+        return { url, status: 200, body: (hit.gz ? zlib.gunzipSync(buf) : buf).toString('utf8'), fromCache: true };
+      } catch { /* битый/недописанный файл кэша — качаем заново */ }
+    }
   }
 
   const rules = await robots(u.hostname, ua);
@@ -208,7 +224,10 @@ async function get(url, { delayMs = 3000, useCache = true, maxAgeDays = 30, ua =
   }
   if (r.status === 200 && /html|text/.test(r.type)) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, r.body);
+    const tmp = gzPath(file) + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, zlib.gzipSync(r.body, { level: 6 }));
+    fs.renameSync(tmp, gzPath(file));
+    try { fs.unlinkSync(file); } catch { /* старой несжатой копии нет */ }
   }
   return { url, status: r.status, body: r.body, type: r.type, fromCache: false };
 }
