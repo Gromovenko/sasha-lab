@@ -24,17 +24,13 @@
  table{width:100%;border-collapse:collapse}
  td{padding:9px 16px;border-top:1px solid #1f2127;vertical-align:top;font-size:20px}
  tr:first-child td{border-top:0}
- td.n{width:39px;color:#6d6f78} td.l{width:36%;color:#b8b8c0}
+ td.l{width:36%;color:#b8b8c0}
  .yes{color:#5fd08a;font-weight:600} .no{color:#7b7d86} .warn{color:#f0b429}
  .src{font-size:17px;margin-top:2px;color:#9a9aa2}
  ul.lk{margin:4px 0 0;padding-left:23px;font-size:18px} ul.lk li{margin:2px 0;font-weight:400}
  a{color:#f0b429} .sm{color:#9a9aa2;font-size:17px}
  .msg{padding:14px;border-radius:12px;background:#15171c;border:1px solid #23252c}
  .err{color:#ff8a80}
- .gen{padding:12px 16px;background:#14161b;border-bottom:1px solid #23252c}
- .gen .t{color:#9a9aa2;font-size:16px;margin-bottom:4px}
- .gi{padding:7px 0;border-top:1px solid #1f2127;font-size:19px} .gi:first-of-type{border-top:0}
- .gi.on{color:#f0b429} .gi .v{font-size:17px;color:#cfcfd6}
  .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start} .g2>div{min-width:0;overflow-wrap:anywhere} .g2 ul.lk{padding-left:18px}
  @media(max-width:560px){td.l{width:auto} td{padding:8px 10px}}
 #pk a.lg{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:96px;min-height:88px;padding:6px;text-align:center;vertical-align:top;font-size:12px}#pk a.lg img{width:56px;height:56px;object-fit:contain;margin-bottom:4px}</style></head><body><div class="wrap">
@@ -83,31 +79,6 @@
    return '<div class="gc"><b>'+esc(r.label)+'</b>'+(r.socks&&r.socks.length?'<div>'+'Цоколи: '+'<b>'+r.socks.map(esc).join(', ')+'</b></div>':'')+r.list.map(function(l){
     return '<div class="src"><a href="'+esc(l.url)+'" target="_blank" rel="noopener noreferrer">'+esc(l.host)+'</a></div>';
    }).join('')+'</div>';}).join('')+'</div>';
- }
- // поколения и комплектации фар из базы автомобилей (cars/car_variants)
- var LIGHT={halogen:'галоген',xenon:'ксенон',led:'LED'};
- function sites(n){var t=n%100,o=n%10;return n+' '+(t>=11&&t<=14?'сайтов':o===1?'сайт':o>=2&&o<=4?'сайта':'сайтов');}
- function variant(v){
-  var p=[];
-  if(v.light) p.push(LIGHT[v.light]||v.light);
-  if(v.afs===true) p.push('с AFS'); else if(v.afs===false) p.push('без AFS');
-  if(v.restyle==='pre') p.push('дорестайл'); else if(v.restyle==='restyle') p.push('рестайл');
-  return esc(p.join(' · ')||'комплектация не названа')+' <span class="sm">· '+sites(v.n_hosts)+'</span>';
- }
- function gens(c){
-  var list=c.generations||[];
-  if(!list.length) return '';
-  var h='<div class="gen"><div class="t">Поколения и комплектации фар — марка, модель и годы подтверждены не меньше чем двумя источниками:</div>';
-  h+=list.map(function(g){
-   var vs=(g.variants||[]).map(variant);
-   return '<div class="gi'+(g.match?' on':'')+'"><b>'+g.year_from+'–'+g.year_to+'</b> <span class="sm">· '+sites(g.n_hosts)+
-    (g.gens&&g.gens.length?' · кузов: '+g.gens.map(esc).join(', '):'')+'</span>'+
-    (vs.length?'<div class="v">'+vs.join('<br>')+'</div>':'<div class="sm">комплектации двумя источниками пока не подтверждены</div>')+'</div>';
-  }).join('');
-  if(c.scope) h+='<div class="sm">Пункты ниже показаны для поколения '+c.scope.from+'–'+c.scope.to+(c.scope.codes.length?' ('+c.scope.codes.map(esc).join(', ').toUpperCase()+')':'')+': предложения и факты для других поколений скрыты.</div>';
-  if(c.genMiss) h+='<div class="sm">Выбранный год не попал ни в одно подтверждённое поколение.</div>';
-  h+='</div>';
-  return h;
  }
  // карточка одна; строки только с данными, у каждой — список ссылок на источники
  function card(c,yr){
