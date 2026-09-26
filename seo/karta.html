@@ -104,6 +104,7 @@
     (g.gens&&g.gens.length?' · кузов: '+g.gens.map(esc).join(', '):'')+'</span>'+
     (vs.length?'<div class="v">'+vs.join('<br>')+'</div>':'<div class="sm">комплектации двумя источниками пока не подтверждены</div>')+'</div>';
   }).join('');
+  if(c.scope) h+='<div class="sm">Пункты ниже показаны для поколения '+c.scope.from+'–'+c.scope.to+(c.scope.codes.length?' ('+c.scope.codes.map(esc).join(', ').toUpperCase()+')':'')+': предложения и факты для других поколений скрыты.</div>';
   if(c.genMiss) h+='<div class="sm">Выбранный год не попал ни в одно подтверждённое поколение.</div>';
   h+='</div>';
   return h;

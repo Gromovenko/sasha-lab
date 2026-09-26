@@ -105,13 +105,16 @@ async function lookup(params) {
     .sort((a, b) => score(b) - score(a)))[0];
   if (!card) return { found: false, year, cards: [] };
   const ids = cat.filter((c) => sameFamily(card, c)).map((c) => c.vehicle_id);
-  const [src, cb] = await Promise.all([sources(ids), carbase(card.make, card.model, year)]);
+  const cb = await carbase(card.make, card.model, year);
+  const scope = genScope(cb.list, year);
+  const src = await sources(ids, scope);
   return { found: true, year, yearMiss, cards: [{
     // Годы в шапке — из базы автомобилей, если она эту машину знает: в справочнике
     // диапазон собран из заголовков и бывает шире реального («Camry 1981–2025»).
     make: card.make, model: card.model,
     year_from: cb.from || card.year_from, year_to: cb.to || card.year_to,
     base: cb.name ? { name: cb.name, hosts: cb.hosts, years: !!cb.from } : null,
+    scope: scope ? { from: scope.from, to: scope.to, codes: scope.codes } : null,
     generations: cb.list, genMiss: !!year && !!cb.list.length && !cb.list.some((g) => g.match),
     confidence: card.confidence, confirmed: card.confirmed,
     shop: src.shop, items: buildItems(card, src),
@@ -171,8 +174,42 @@ const short = (t, n = 46) => {
 const ALIVE = `(d.id IS NULL OR (d.skip_reason IS NULL AND (d.http_status IS NULL OR d.http_status = 200)))
   AND NOT EXISTS (SELECT 1 FROM vehicle_links x WHERE x.url = %U AND x.http_status IS NOT NULL AND x.http_status <> 200)`;
 
-async function sources(ids) {
-  const parts = await db.q(
+
+// ── привязка к поколению ────────────────────────────────────────────────────
+// Пункты 4–18 собираются по всей модели, а у поколений разные фары. Когда выбран
+// год и база авто знает поколение, оставляем только то, что не противоречит ему:
+// явный год другого поколения или код кузова другого поколения (V40, XV55…) —
+// отбрасываем; без указания года и кода — оставляем (это «на модель в целом»).
+const genCodes = (gens) => [...new Set((gens || []).map((g) => (String(g).toLowerCase().match(/[a-z]{1,3}\d{2,3}/) || [])[0]).filter(Boolean))];
+function genScope(list, y) {
+  y = Number(y) || null;
+  const hit = (list || []).filter((g) => g.match);
+  if (!y || !hit.length) return null;
+  const mine = hit.reduce((a, b) => ((b.year_to - b.year_from) < (a.year_to - a.year_from) ? b : a));
+  const own = new Set(hit.flatMap((g) => genCodes(g.gens)));
+  const other = new Set((list || []).filter((g) => !g.match).flatMap((g) => genCodes(g.gens)).filter((c) => !own.has(c)));
+  const pre = new Set([...own].map((c) => c.replace(/\d+$/, '')));
+  const scope = { y, from: mine.year_from, to: mine.year_to, codes: [...own], other };
+  scope.ok = (text) => {
+    const t = String(text || '').toLowerCase();
+    const codes = new Set([...t.matchAll(/(?<![a-z\d])([a-z]{1,3}\d{2,3})(?![a-z\d])/g)].map((m) => m[1]));
+    // годы: 2011-2014, 2011 – 2014, 11-14 г.в., одиночный (2012)
+    const yrs = [];
+    for (const m of t.matchAll(/(?<!\d)((?:19|20)\d{2}|\d{2})\s*[-–—]\s*((?:19|20)\d{2}|\d{2})(?!\d)/g)) {
+      const f = (v) => (v.length === 2 ? 2000 + Number(v) : Number(v));
+      const a = f(m[1]), b = f(m[2]);
+      if (a >= 1980 && b >= a && b <= 2035) yrs.push([a, b]);
+    }
+    if (yrs.length) return yrs.some(([a, b]) => y >= a && y <= b);
+    if ([...codes].some((c) => own.has(c))) return true;           // прямо наше поколение, годов нет
+    if ([...codes].some((c) => other.has(c) || (!own.has(c) && pre.has(c.replace(/\d+$/, ''))))) return false;  // чужое поколение
+    return true;
+  };
+  return scope;
+}
+
+async function sources(ids, scope) {
+  let parts = await db.q(
     `SELECT * FROM (
        SELECT vp.kind, p.name, p.url, p.price_rub, p.available,
               CASE WHEN vp.kind = 'bulb' THEN (SELECT string_agg(m[1], ' | ')
@@ -182,18 +219,35 @@ async function sources(ids) {
          FROM vehicle_parts vp JOIN parts p ON p.id = vp.part_id
          LEFT JOIN documents d ON d.url = p.url
         WHERE vp.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'p.url')}) t
-      WHERE rn <= 150`, [ids]);
-  const facts = await db.q(
+      WHERE rn <= ${scope ? 600 : 150}`, [ids]);
+  let facts = await db.q(
     `SELECT d.url, d.title, f.confidence, f.difficulty, f.needs_opening, f.hours, f.sealant,
             f.adaptive, f.low_beam_source
        FROM fitment f CROSS JOIN LATERAL unnest(f.evidence) e
        JOIN documents d ON d.id = e
       WHERE f.vehicle_id = ANY ($1) AND ${ALIVE.replace('%U', 'd.url')}
       ORDER BY f.confidence DESC, d.fetched_at DESC LIMIT 600`, [ids]);
-  const shop = await db.q(
+  let shop = await db.q(
     `SELECT l.url, l.title FROM vehicle_links l JOIN sources s ON s.id = l.source_id
       WHERE l.vehicle_id = ANY ($1) AND s.kind = 'parts' AND (l.http_status IS NULL OR l.http_status = 200)
       ORDER BY CASE l.basis WHEN 'url' THEN 0 WHEN 'title' THEN 1 ELSE 2 END, l.url LIMIT 40`, [ids]);
+  const scoped = {};
+  if (scope) {
+    parts = parts.filter((r) => scope.ok(`${r.name} ${r.url}`));
+    facts = facts.filter((r) => scope.ok(`${r.title} ${r.url}`));
+    shop = shop.filter((r) => scope.ok(`${r.title} ${r.url}`));
+    const first = (f) => { const r = facts.find((x) => x[f] != null); return r ? r[f] : null; };
+    Object.assign(scoped, { on: true, difficulty: first('difficulty'), needs_opening: first('needs_opening'),
+      hours: first('hours'), sealant: first('sealant'), adaptive: first('adaptive'), low_beam: first('low_beam_source') });
+    const cnt = (kind, re, no) => {
+      const l = parts.filter((r) => r.kind === kind && (!re || re.test(r.name)) && !(no && no.test(r.name)));
+      const pr = l.map((r) => Number(r.price_rub)).filter((v) => v > 0);
+      return { n: new Set(l.map((r) => r.url)).size, min: pr.length ? Math.min(...pr) : null, stock: l.some((r) => r.available === true) };
+    };
+    scoped.counts = { glass: cnt('glass'), housing: cnt('housing'), adapter: cnt('adapter', /рамк/i, /переходник|адаптер/i),
+      canbus: cnt('wire', /обманк|canbus|can-шин|имитатор/i), headlight_oem: cnt('headlight_oem'), headlight_analog: cnt('headlight_analog'),
+      ballast_oem: cnt('ballast', /штатн|oem|оригинал/i), control: cnt('control'), drl: cnt('drl'), kit: cnt('kit') };
+  }
   const uniq = (list) => { const seen = new Set(); return list.filter((x) => !seen.has(x.url) && seen.add(x.url)); };
   const onePerHost = (list) => { const seen = new Set(); return list.filter((x) => { const h = hostOf(x.url); return !seen.has(h) && seen.add(h); }); };
   const pl = (kind, re, n = PER_ITEM, no) => onePerHost(uniq(parts.filter((r) => r.kind === kind && (!re || re.test(r.name)) && !(no && no.test(r.name)))))
@@ -232,7 +286,7 @@ async function sources(ids) {
     if (top.length || found.length) bulbRows.push({ label, list: top, socks: found });
   }
   return {
-    glassCols, housingCols, bulbRows,
+    scoped, glassCols, housingCols, bulbRows,
     shop: onePerHost(uniq(shop)).slice(0, PER_ITEM).map((r) => ({ url: r.url, host: hostOf(r.url), title: short(r.title) || hostOf(r.url) })),
     glass: pl('glass'), housing: pl('housing'), adapter: pl('adapter', /рамк/i, 5, /переходник|адаптер/i),
     teardown: fl((r) => r.difficulty != null || r.needs_opening != null || r.hours != null),
@@ -250,6 +304,15 @@ async function sources(ids) {
 // Пункты карточки: только те, по которым в базе что-то есть.
 function buildItems(c, src) {
   const items = [];
+  const sc = (src && src.scoped && src.scoped.on) ? src.scoped : null;
+  if (sc) {                       // выбрано поколение: значения только из его фактов
+    c = { ...c, difficulty: sc.difficulty, needs_opening: sc.needs_opening, hours_max: sc.hours,
+      sealant: sc.sealant, sealant_raw: sc.sealant, adaptive: sc.adaptive, low_beam: sc.low_beam, low_beam_raw: sc.low_beam,
+      factory_lens: null, bulb_sockets: null, bulb_spots: null };
+    for (const [k, v] of Object.entries(sc.counts)) {
+      c[`${k}_offers`] = v.n; c[`${k}_price_min`] = v.min; c[`${k}_in_stock`] = v.stock;
+    }
+  }
   const rub = (n) => Number(n).toLocaleString('ru-RU') + ' ₽';
   const add = (n, label, value, links, cols, rows) => { if (value) items.push({ n, label, value, links: links || [], cols, rows }); };
   const part = (k) => {
@@ -550,4 +613,4 @@ async function handle(req, res) {
 
 const PAGE = require('fs').readFileSync(require('path').join(__dirname, 'karta.html'), 'utf8');
 
-module.exports = { handle, lookup, options, carbase, findVehicles, mergeCards, baseModel, buildItems, cbNameIn };
+module.exports = { handle, lookup, options, carbase, findVehicles, mergeCards, baseModel, buildItems, cbNameIn, genScope };

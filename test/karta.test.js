@@ -57,3 +57,19 @@ test('имя модели из базы автомобилей выигрыва�
   const cb2 = { byMake: new Map([['toyota', ['pri']]]) };
   assert.strictEqual(karta.cbNameIn(cb2, 'toyota', 'prius'), undefined);   // «prius» ≠ «pri» + хвост
 });
+
+test('год выбирает поколение: чужие годы и коды кузова отсекаются', () => {
+  const list = [
+    { year_from: 2009, year_to: 2011, gens: ['v40', 'xv40'], match: false },
+    { year_from: 2011, year_to: 2014, gens: ['v50', 'xv50'], match: true },
+    { year_from: 2014, year_to: 2017, gens: ['xv55'], match: false },
+  ];
+  const sc = karta.genScope(list, 2012);
+  assert.ok(sc.ok('Стекло фары Camry V50 (2011-2014)'));
+  assert.ok(sc.ok('Стекла фар Toyota Camry'));                 // без года и кода — на модель в целом
+  assert.ok(!sc.ok('Стекло фары Camry V40 (2009-2011)'));
+  assert.ok(!sc.ok('Лампы Camry V50 restyling 2014-2018'));    // год важнее кода
+  assert.ok(!sc.ok('Стекла Camry XV30'));                      // чужой код той же серии
+  assert.ok(sc.ok('Лампа H11 для Camry'));                     // цоколь ≠ код кузова
+  assert.strictEqual(karta.genScope(list, null), null);
+});
