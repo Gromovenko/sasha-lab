@@ -6,7 +6,8 @@
 //         годов нет, а машина по модели одна).
 // fuzzy — совпало базовое имя модели («CX-5 II» → cx5), либо годы пересеклись
 //         только с допуском ±1 год.
-// Неоднозначные (два равных кандидата) и без пары — в seo/data/vehicle-map-unmatched.csv.
+// Неоднозначные (два равных кандидата), слишком широкие («Camry 1981–2025») и без
+// пары — в seo/data/vehicle-map-unmatched.csv: они остаются «на модель в целом».
 const fs = require('fs');
 const path = require('path');
 const db = require('../seo/lib/db');
@@ -41,6 +42,12 @@ function mapVehicle(v, carsByMake) {
   if (!loose.length) return { unmatched: 'no_car' };
   loose.sort((a, b) => b[1] - a[1]);
   if (loose.length > 1 && loose[0][1] === loose[1][1]) return { unmatched: 'ambiguous', cands: loose.map(([c]) => c.id) };
+  // Запись справочника вида «Camry 1981–2025» — это «модель в целом», а не поколение:
+  // приколоть её к одному поколению нельзя, иначе её детали пропадут из всех
+  // остальных годов. Такие записи оставляем без car_id (решает разбор названия).
+  const span = (x) => (x.year_from == null ? null : (x.year_to ?? 2100) - x.year_from + 1);
+  const vs = span(v), cs = span(loose[0][0]);
+  if (vs && cs && vs > 12 && vs > cs * 2) return { unmatched: 'too_wide', cands: loose.map(([c]) => c.id) };
   const method = strict.length && byName === 'exact' ? 'exact' : 'fuzzy';
   return { car_id: loose[0][0].id, method };
 }
@@ -75,6 +82,9 @@ async function rebuild({ out = path.join(__dirname, '../seo/data/vehicle-map-unm
   }
   const upd = {};
   for (const t of ['fitment', 'vehicle_parts', 'vehicle_links']) {
+    // Сначала гасим прежние значения: запись, потерявшая пару (стала too_wide или
+    // неоднозначной), иначе осталась бы с устаревшим car_id.
+    await db.q(`UPDATE ${t} SET car_id = NULL WHERE car_id IS NOT NULL`);
     await db.q(`UPDATE ${t} x SET car_id = m.car_id FROM vehicle_car_map m WHERE m.vehicle_id = x.vehicle_id`);
     const r = await db.one(`SELECT count(*)::int total, count(car_id)::int mapped FROM ${t}`);
     upd[t] = r;

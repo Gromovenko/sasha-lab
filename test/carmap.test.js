@@ -23,6 +23,11 @@ test('carmap: без годов и одна машина — берём; две 
   assert.strictEqual(mapVehicle(v('kia', 'Seltos SP2', null, null), cars).car_id, 4);
   assert.strictEqual(mapVehicle(v('toyota', 'camry', null, null), cars).unmatched, 'ambiguous');
 });
+test('carmap: запись «на модель в целом» (Camry 1981–2025) к поколению не крепим', () => {
+  const r = mapVehicle(v('toyota', 'camry', 1981, 2025), cars);
+  assert.strictEqual(r.unmatched, 'too_wide');
+  assert.strictEqual(mapVehicle(v('toyota', 'camry', 2011, 2017), cars).car_id, 2);
+});
 test('carmap: нет машины / нет модели', () => {
   assert.strictEqual(mapVehicle(v('kia', 'seltos', 1990, 1995), cars).unmatched, 'no_car');
   assert.strictEqual(mapVehicle(v('kia', 'rio', 2015, 2017), cars).unmatched, 'no_model');
