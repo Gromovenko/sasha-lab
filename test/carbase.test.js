@@ -40,3 +40,11 @@ test('модели с номером не слипаются', () => {
   assert.strictEqual(parseTitle('Рамки для biled линз chery tiggo 7 pro 2020-2023 купить', 'b.ru').model, 'tiggo-7');
   assert.strictEqual(parseTitle('Переходные рамки Saab 9-3 (2002-2007)', 'c.ru').model, '9-3');
 });
+
+test('AFS: нет слова = нет; вид детали и назначение хранятся', () => {
+  const a = parseTitle('Переходные рамки для линз TOYOTA CAMRY V50 2011-2015 с AFS', 'luxsar.ru');
+  assert.deepStrictEqual([a.afs, a.part_kind, a.purpose], [true, 'frame', 'install_lens']);
+  const b = parseTitle('Переходные рамки для линз TOYOTA CAMRY V50 2011-2015', 'luxsar.ru');
+  assert.strictEqual(b.afs, false);
+  assert.strictEqual(require('../harvest/carbase').partOf('Стекло фары Toyota Camry').part_kind, 'glass');
+});

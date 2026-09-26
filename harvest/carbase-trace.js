@@ -40,8 +40,8 @@ function traceTitle(title, host = '') {
 
   const light = cb.lightOf(t);
   add('4. Комплектация', 'слова «ксенон/галоген/LED», «AFS/адаптив», «рестайл»; «Bi-LED» вырезается (это линза, а не штатный свет)',
-    `свет=${light.light || '—'}, AFS=${light.afs === null ? 'неизвестно' : light.afs ? 'есть' : 'нет'}, рестайл=${light.restyle || '—'}`,
-    light.afs === null ? 'Слова про AFS нет → «неизвестно». Это не то же самое, что «нет AFS».' : '');
+    `свет=${light.light || '—'}, AFS=${light.afs ? 'есть' : 'нет'}, рестайл=${light.restyle || '—'}`,
+    light.afs ? '' : 'Слова про AFS нет → «нет» (правило владельца: отсутствие слова = без AFS).');
 
   const yr = cb.years(t);
   add('5. Годы', 'шаблон «2011-2015», «11-15 г.в.», «2011-н.в.»',
@@ -113,12 +113,13 @@ function compare(human, res) {
   cmp('Код кузова', human.gen, r.gen, 'код берётся из остатка после модели; нормализации V50 = XV50 нет, склейка идёт только по годам');
   cmp('Год от', human.year_from, r.year_from, 'шаблон годов не сработал');
   cmp('Год до', human.year_to, r.year_to, 'шаблон годов не сработал');
-  cmp('AFS', human.afs ? 'есть' : 'нет', r.afs === null || r.afs === undefined ? 'неизвестно' : r.afs ? 'есть' : 'нет',
+  cmp('AFS', human.afs ? 'есть' : 'нет', r.afs ? 'есть' : 'нет',
     'слово «AFS»/«адаптив» не найдено');
-  rows.push({ label: 'Вид детали', want: human.kind, got: 'не хранится', ok: false,
-    why: 'car_obs не имеет поля «вид детали»: в базу авто пропускаются только заголовки со словом «рамк», поэтому вид подразумевается, но не записан' });
-  rows.push({ label: 'Назначение', want: human.purpose, got: 'не хранится', ok: false,
-    why: 'слова «для линз» вырезаются при очистке хвоста (carbase.js:80) и нигде не сохраняются' });
+  const KIND = { frame: 'рамка', glass: 'стекло', housing: 'корпус', kit: 'набор', module: 'модуль', lamp: 'лампа' };
+  const gotKind = KIND[r.part_kind] || 'не определён';
+  rows.push({ label: 'Вид детали', want: human.kind, got: gotKind, ok: gotKind === human.kind, why: 'вид детали берётся по слову в заголовке (carbase.js partOf)' });
+  const gotPurpose = r.purpose === 'install_lens' ? 'установка линз' : 'не определено';
+  rows.push({ label: 'Назначение', want: human.purpose, got: gotPurpose, ok: gotPurpose === human.purpose, why: 'назначение — по словам «для/под линз», «замена линз»' });
   return rows;
 }
 

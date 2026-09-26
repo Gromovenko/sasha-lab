@@ -45,13 +45,23 @@ function lightOf(s) {
   if (/ксенон|xenon/i.test(t)) light = 'xenon';
   else if (/галоген|halogen/i.test(t)) light = 'halogen';
   else if (/(?<![A-Za-zА-Яа-я])(led|лед)(?![A-Za-zА-Яа-я])|светодиод/i.test(t)) light = 'led';
-  let afs = null;
+  // Решение владельца 26.09.2026: слова про AFS нет — значит «без AFS». Только есть/нет.
+  let afs = false;
   if (/без\s*afs|без\s*адаптив/i.test(t)) afs = false;
   else if (/(?<![A-Za-z])afs(?![A-Za-z])|адаптив/i.test(t)) afs = true;
   let restyle = null;
   if (/до\s?рест|pre[-\s]?facelift/i.test(t)) restyle = 'pre';
   else if (/рестайл|рест(?![а-я])|facelift/i.test(t)) restyle = 'restyle';
   return { light, afs, restyle };
+}
+
+// Вид детали и назначение из заголовка (хранятся в car_obs.part_kind / purpose).
+function partOf(s) {
+  const kinds = [['frame', /рамк/i], ['glass', /стекл/i], ['housing', /корпус/i], ['kit', /набор|комплект/i],
+    ['module', /модул|линз[аы]\s+(?!для)/i], ['lamp', /ламп/i]];
+  const kind = (kinds.find(([, re]) => re.test(s)) || [null])[0];
+  const purpose = /(для|под|установк\w*)\s+(би[-\s]?лед\s+|bi[-\s]?led\s+)?линз|замен\w*\s+линз/i.test(s) ? 'install_lens' : null;
+  return { part_kind: kind, purpose };
 }
 
 const normModel = (s) => s.toLowerCase().replace(/[^a-zа-яё0-9\s-]/gi, ' ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
@@ -99,7 +109,7 @@ function parseTitle(title, host) {
   return {
     host, make, model: slugify(model) || model, gen: gen ? gen.replace(/\s+/g, '-').slice(0, 24) : null,
     year_from: yr ? yr.from : null, year_to: yr ? yr.to : null,
-    restyle: light.restyle, light: light.light, afs: light.afs,
+    restyle: light.restyle, light: light.light, afs: light.afs, ...partOf(title),
   };
 }
 
@@ -188,11 +198,11 @@ async function rebuild() {
     const ch = obs.slice(i, i + 500);
     const vals = [], args = [];
     ch.forEach((o, j) => {
-      const b = j * 11;
-      vals.push(`(${Array.from({ length: 11 }, (_, k) => `$${b + k + 1}`).join(',')})`);
-      args.push(o.host, o.url, o.title, o.make, o.model, o.gen, o.year_from, o.year_to, o.restyle, o.light, o.afs);
+      const b = j * 13;
+      vals.push(`(${Array.from({ length: 13 }, (_, k) => `$${b + k + 1}`).join(',')})`);
+      args.push(o.host, o.url, o.title, o.make, o.model, o.gen, o.year_from, o.year_to, o.restyle, o.light, o.afs, o.part_kind, o.purpose);
     });
-    await db.q(`INSERT INTO car_obs (host,url,title,make,model,gen,year_from,year_to,restyle,light,afs) VALUES ${vals.join(',')} ON CONFLICT (url) DO NOTHING`, args);
+    await db.q(`INSERT INTO car_obs (host,url,title,make,model,gen,year_from,year_to,restyle,light,afs,part_kind,purpose) VALUES ${vals.join(',')} ON CONFLICT (url) DO NOTHING`, args);
   }
   const cars = consolidate(obs);
   for (const c of cars) {
@@ -225,5 +235,5 @@ const toCsv = (rows) => {
   return [cols.join(';')].concat(rows.map((r) => cols.map((c) => esc(r[c])).join(';'))).join('\n');
 };
 
-module.exports = { parseTitle, consolidate, rebuild, exportRows, toCsv, lightOf, years,
+module.exports = { parseTitle, consolidate, rebuild, exportRows, toCsv, lightOf, partOf, years,
   MAKE_RE, MULTI, NAME_NUM, SERIES, normModel };

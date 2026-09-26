@@ -14,7 +14,7 @@ test('трассировка совпадает с боевым parseTitle', () 
     assert.ok(d.steps.length >= 2);
   }
 });
-test('сравнение: вид детали и назначение не хранятся', () => {
+test('сравнение: вид детали, назначение и AFS теперь совпадают с эталоном', () => {
   const rows = compare(REFERENCE.human, parseTitle(REFERENCE.title, REFERENCE.host));
-  assert.ok(rows.filter((x) => !x.ok).map((x) => x.label).join() === 'Вид детали,Назначение');
+  assert.deepStrictEqual(rows.filter((x) => !x.ok).map((x) => x.label), []);
 });
