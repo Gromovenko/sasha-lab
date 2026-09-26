@@ -44,3 +44,16 @@ test('разные годы и хвосты модели — всё равно �
   assert.deepStrictEqual(items.map((i) => i.n), [4, 5]);
   assert.strictEqual(items[0].cols.left.length, 1);
 });
+
+test('имя модели из базы автомобилей выигрывает у обрезков справочника', () => {
+  const cb = { byMake: new Map([['mazda', ['cx-5', 'cx-9', 'cx']], ['toyota', ['land-cruiser-prado', 'land-cruiser', 'camry']]]) };
+  assert.strictEqual(karta.cbNameIn(cb, 'mazda', 'cx-5-ii'), 'cx-5');
+  assert.strictEqual(karta.cbNameIn(cb, 'mazda', 'cx5'), 'cx-5');          // «cx5» из справочника — та же модель
+  assert.strictEqual(karta.cbNameIn(cb, 'mazda', 'cx9-ii'), 'cx-9');
+  assert.strictEqual(karta.cbNameIn(cb, 'toyota', 'landcruiser-200'), 'land-cruiser');
+  assert.strictEqual(karta.cbNameIn(cb, 'toyota', 'land-cruiser-prado-150'), 'land-cruiser-prado');
+  assert.strictEqual(karta.cbNameIn(cb, 'toyota', 'camry-v50'), 'camry');
+  assert.strictEqual(karta.cbNameIn(cb, 'toyota', 'foglights'), undefined); // чего нет в базе — не модель
+  const cb2 = { byMake: new Map([['toyota', ['pri']]]) };
+  assert.strictEqual(karta.cbNameIn(cb2, 'toyota', 'prius'), undefined);   // «prius» ≠ «pri» + хвост
+});

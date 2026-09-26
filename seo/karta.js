@@ -1,6 +1,11 @@
 // Страница «Карточка машины» (/karta): марка, модель, год — текстом или голосом —
 // и по всем 18 пунктам карточки из вида vehicle_catalog (миграции 007–010).
 //
+// Марка, модель и год берутся из базы автомобилей (cars/car_variants, миграция
+// 011): её имена моделей — эталон для списков («cx5», «cx» → «cx-5»), её годы
+// сверены минимум двумя сайтами, а комплектации фары одной машины (свет × AFS ×
+// рестайл) показываются отдельным блоком карточки.
+//
 //   GET  /karta            страница
 //   GET  /karta/api        ?make=&model=&year= или ?q=«киа селтос 2021» → карточки
 //   POST /karta/stt        сырое аудио (запасной путь, если в браузере нет
@@ -55,11 +60,22 @@ async function findVehicles({ make, model, year, q }) {
   }
   let rows = [];
   if (make && model) {
-    const slug = `${vehiclesLib.slugify(make)}-${vehiclesLib.slugify(model)}`;
-    rows = await db.q(
-      `SELECT id, slug, make, model, year_from, year_to, mentions FROM vehicles
-        WHERE slug = $1 OR slug LIKE $1 || '-%' OR $2 = ANY (aliases)
-        ORDER BY (slug = $1) DESC, mentions DESC LIMIT 30`, [slug, String(model).toLowerCase()]);
+    const mk = vehiclesLib.slugify(make), md = vehiclesLib.slugify(model);
+    // В списках стоит имя модели из базы автомобилей; в справочнике под ним
+    // лежит несколько записей («CX-5 II», «cx5», «Seltos SP2») — берём все.
+    const al = (await aliases()).get(`${mk}|${md}`);
+    if (al && al.length) {
+      rows = await db.q(
+        `SELECT id, slug, make, model, year_from, year_to, mentions FROM vehicles
+          WHERE slug = ANY ($1) ORDER BY mentions DESC LIMIT 60`, [al]);
+    }
+    if (!rows.length) {
+      const slug = `${mk}-${md}`;
+      rows = await db.q(
+        `SELECT id, slug, make, model, year_from, year_to, mentions FROM vehicles
+          WHERE slug = $1 OR slug LIKE $1 || '-%' OR $2 = ANY (aliases)
+          ORDER BY (slug = $1) DESC, mentions DESC LIMIT 30`, [slug, String(model).toLowerCase()]);
+    }
   }
   if (!rows.length) {
     // запасной путь: слова из строки против slug, марки, модели и алиасов
@@ -89,9 +105,14 @@ async function lookup(params) {
     .sort((a, b) => score(b) - score(a)))[0];
   if (!card) return { found: false, year, cards: [] };
   const ids = cat.filter((c) => sameFamily(card, c)).map((c) => c.vehicle_id);
-  const src = await sources(ids);
+  const [src, cb] = await Promise.all([sources(ids), carbase(card.make, card.model, year)]);
   return { found: true, year, yearMiss, cards: [{
-    make: card.make, model: card.model, year_from: card.year_from, year_to: card.year_to,
+    // Годы в шапке — из базы автомобилей, если она эту машину знает: в справочнике
+    // диапазон собран из заголовков и бывает шире реального («Camry 1981–2025»).
+    make: card.make, model: card.model,
+    year_from: cb.from || card.year_from, year_to: cb.to || card.year_to,
+    base: cb.name ? { name: cb.name, hosts: cb.hosts, years: !!cb.from } : null,
+    generations: cb.list, genMiss: !!year && !!cb.list.length && !cb.list.some((g) => g.match),
     confidence: card.confidence, confirmed: card.confirmed,
     shop: src.shop, items: buildItems(card, src),
   }] };
@@ -267,21 +288,92 @@ function buildItems(c, src) {
   return items;
 }
 
+// ── база автомобилей (cars/car_variants, миграция 011) ──────────────────────
+// Имена моделей в cars — эталон: они сведены из каталогов переходных рамок девяти
+// магазинов, а машина попадает в confirmed только когда марка, модель И годы
+// совпали минимум у двух РАЗНЫХ сайтов. Комплектации фары (свет × AFS × рестайл)
+// живут в car_variants со своим счётом источников.
+let CB = { at: 0, byMake: null, years: null };
+
+async function carbaseIndex() {
+  if (CB.byMake && Date.now() - CB.at < 10 * 60_000) return CB;
+  const rows = await db.q(`SELECT make, model,
+      count(*) FILTER (WHERE status = 'confirmed')::int                AS conf,
+      max(array_length(mm_hosts, 1))::int                              AS mm,
+      min(year_from) FILTER (WHERE status = 'confirmed')::int           AS yf,
+      max(year_to)   FILTER (WHERE status = 'confirmed')::int           AS yt
+     FROM cars GROUP BY 1, 2`);
+  const byMake = new Map(), years = new Map();
+  for (const r of rows) {
+    if (!(r.conf > 0 || r.mm >= MIN_SOURCES)) continue;       // марку+модель знают ≥2 сайтов
+    if (!byMake.has(r.make)) byMake.set(r.make, []);
+    byMake.get(r.make).push(r.model);
+    if (r.yf) years.set(`${r.make}|${r.model}`, { from: r.yf, to: r.yt || r.yf });
+  }
+  // длинные имена вперёд: «cx-5» должно выиграть у «cx»
+  for (const list of byMake.values()) list.sort((a, b) => b.length - a.length || a.localeCompare(b));
+  CB = { at: Date.now(), byMake, years };
+  return CB;
+}
+
+// Имя записи справочника («CX-5 II», «cx5», «CX7 I», «LandCruiser 200») → имя
+// модели в cars. Дефисы и пробелы сайты ставят по-разному, поэтому сравниваем
+// «сжатые» имена; список моделей марки отсортирован от длинных к коротким, так что
+// первое совпадение — самое точное («cx5» уходит в «cx-5», а не в «cx»).
+// Имя модели должно закрыть слово целиком: «prius» — это не модель «pri»
+// с хвостом «us», а «cx9-ii» — это «cx-9» с поколением.
+const flat = (s) => String(s || '').replace(/[^a-z0-9]/g, '');
+function flatMatch(slug, m) {
+  const f = flat(m);
+  let i = 0, k = 0;
+  while (i < slug.length && k < f.length) {
+    if (!/[a-z0-9]/.test(slug[i])) { i++; continue; }
+    if (slug[i] !== f[k]) return false;
+    i++; k++;
+  }
+  if (k < f.length) return false;
+  return i >= slug.length || !/[a-z0-9]/.test(slug[i]);
+}
+const cbNameIn = (cb, make, slug) => (cb.byMake.get(make) || []).find((m) => flatMatch(slug, m));
+
+// Поколения и комплектации одной машины: только подтверждённые ≥2 источниками.
+async function carbase(make, model, year) {
+  const none = { name: null, list: [], hosts: [], from: null, to: null };
+  const cb = await carbaseIndex();
+  const mk = vehiclesLib.slugify(make);
+  const name = cbNameIn(cb, mk, vehiclesLib.slugify(model))
+    || cbNameIn(cb, mk, vehiclesLib.slugify(baseModel(model)));
+  if (!name) return none;
+  const rows = await db.q(`SELECT c.year_from, c.year_to, c.gens, c.hosts, c.n_hosts,
+      coalesce((SELECT json_agg(json_build_object('light', v.light, 'afs', v.afs,
+                   'restyle', v.restyle, 'n_hosts', v.n_hosts) ORDER BY v.n_hosts DESC, v.light)
+                  FROM car_variants v WHERE v.car_id = c.id AND v.status = 'confirmed'), '[]'::json) AS variants
+     FROM cars c WHERE c.make = $1 AND c.model = $2 AND c.status = 'confirmed'
+     ORDER BY c.year_from, c.year_to`, [mk, name]);
+  const y = Number(year) || null;
+  const list = rows.map((r) => ({
+    year_from: r.year_from, year_to: r.year_to, gens: (r.gens || []).slice(0, 6), n_hosts: r.n_hosts,
+    variants: r.variants || [], match: !!y && y >= r.year_from && y <= r.year_to,
+  }));
+  const hosts = [...new Set(rows.flatMap((r) => r.hosts || []))].sort();
+  const yy = cb.years.get(`${mk}|${name}`) || {};
+  return { name, list, hosts, from: yy.from || null, to: yy.to || null };
+}
+
 // ── выпадающие списки: марка → модель → год ─────────────────────────────────
 // Берём только машины, у которых есть карточка (vehicle_catalog). Модели считаем
 // по базовому имени («Seltos I» и «Seltos» — одна), годы — объединением диапазонов.
-let OPT = { at: 0, tree: null };
+let OPT = { at: 0, tree: null, alias: null };
 
-// Эталон моделей: имя считается настоящей моделью, если оно есть в каталоге
-// vdf-light (страницы /catalog/<марка>_<модель>) или подтверждено страницами
-// минимум двух разных сайтов. Так отсеиваются слова из заголовков («look», «use»),
-// опечатки и чужие модели под чужой маркой; варианты «mdx 1g», «mdx mdx»
-// схлопываются в кратчайший подтверждённый префикс («mdx»).
+// Эталон моделей: имя из базы автомобилей (cars). Чего нет в ней — проверяем по
+// прежнему правилу: каталог vdf-light (страницы /catalog/<марка>_<модель>), снимок
+// criline или подтверждение страницами минимум двух разных сайтов. Так отсеиваются
+// слова из заголовков («look», «use»), опечатки и чужие модели под чужой маркой.
 const MIN_SOURCES = 2;
 // Снимок страницы criline.ru/perexodnyie-ramki/ (слаги переходных рамок «марка-модель-…»):
 // модели оттуда считаются подтверждёнными безусловно.
 let CRILINE = [];
-try { CRILINE = require('./criline-frames.json'); } catch { /* нет снимка — эталон только vdf и сайты */ }
+try { CRILINE = require('./criline-frames.json'); } catch { /* нет снимка — эталон только cars, vdf и сайты */ }
 const key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9а-я]+/g, ' ').trim().split(' ').filter(Boolean);
 
 async function reference() {
@@ -318,31 +410,57 @@ function logoOf(make) {
   const n = LOGO_ALIAS[make] || make.replace(/[ -]/g, '_');
   return fs.existsSync(path.join(__dirname, 'logos', n + '.png')) ? n : null;
 }
+
+// Одна модель списка = несколько записей справочника. Карта «марка|модель → slug'и»
+// нужна, чтобы по выбору из списка найти их все, а не только точное совпадение.
+async function aliases() {
+  await options();
+  return OPT.alias;
+}
+
 async function options() {
   if (OPT.tree && Date.now() - OPT.at < 10 * 60_000) return OPT.tree;
-  const [rows, canon] = await Promise.all([
-    db.q('SELECT make, model, year_from, year_to FROM vehicle_catalog WHERE make IS NOT NULL AND model IS NOT NULL'),
+  const [rows, cb, canon] = await Promise.all([
+    db.q(`SELECT make, model, slug, year_from, year_to FROM vehicle_catalog
+           WHERE make IS NOT NULL AND model IS NOT NULL`),
+    carbaseIndex(),
     reference(),
   ]);
   const tree = new Map();                       // марка → модель → {years:Set}
+  const alias = new Map();                      // марка|модель → slug'и справочника
   const thisYear = new Date().getFullYear();
   for (const r of rows) {
     const mk = String(r.make).toLowerCase();
-    const bm = canon(mk, baseModel(r.model));
+    const bm = cbNameIn(cb, mk, vehiclesLib.slugify(r.model)) || canon(mk, baseModel(r.model));
     if (!bm) continue;
     if (!tree.has(mk)) tree.set(mk, new Map());
     const models = tree.get(mk);
     if (!models.has(bm)) models.set(bm, { years: new Set() });
+    const ak = `${mk}|${vehiclesLib.slugify(bm)}`;
+    if (!alias.has(ak)) alias.set(ak, []);
+    if (r.slug) alias.get(ak).push(r.slug);
     if (r.year_from) {
       for (let y = r.year_from; y <= Math.min(r.year_to || thisYear, thisYear + 1); y++) models.get(bm).years.add(y);
     }
   }
+  // Годы: если база автомобилей знает их для этой модели — берём только их
+  // (они сверены двумя сайтами), иначе остаются годы из справочника.
+  for (const [mk, models] of tree) {
+    for (const [bm, v] of models) {
+      const yy = cb.years.get(`${mk}|${bm}`);
+      if (!yy) continue;
+      v.years = new Set();
+      for (let y = yy.from; y <= Math.min(yy.to || thisYear, thisYear + 1); y++) v.years.add(y);
+      v.base = true;
+    }
+  }
   OPT = {
     at: Date.now(),
+    alias,
     tree: [...tree.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([make, models]) => ({
       make,
       models: [...models.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([model, v]) => ({ model, years: [...v.years].sort((a, b) => b - a) })),
+        .map(([model, v]) => ({ model, base: !!v.base, years: [...v.years].sort((a, b) => b - a) })),
     })),
   };
   return OPT.tree;
@@ -432,4 +550,4 @@ async function handle(req, res) {
 
 const PAGE = require('fs').readFileSync(require('path').join(__dirname, 'karta.html'), 'utf8');
 
-module.exports = { handle, lookup, options, findVehicles, mergeCards, baseModel, buildItems };
+module.exports = { handle, lookup, options, carbase, findVehicles, mergeCards, baseModel, buildItems, cbNameIn };
