@@ -48,3 +48,31 @@ test('AFS: нет слова = нет; вид детали и назначени
   assert.strictEqual(b.afs, false);
   assert.strictEqual(require('../harvest/carbase').partOf('Стекло фары Toyota Camry').part_kind, 'glass');
 });
+
+test('V50 и XV50 — одно поколение, диапазоны 2011–2014 и 2011–2015 склеиваются', () => {
+  const { consolidate, bodyOf } = require('../harvest/carbase');
+  assert.strictEqual(bodyOf('xv50'), 'v50');
+  const o = (t, h) => parseTitle(t, h);
+  const cars = consolidate([
+    o('Переходные рамки для линз TOYOTA CAMRY V50 2011-2017', 'a.ru'),
+    o('Переходные рамки Toyota Camry XV50 2011-2014', 'b.ru'),
+  ]);
+  const withY = cars.filter((c) => c.year_from);
+  assert.strictEqual(withY.length, 1);
+  assert.strictEqual(withY[0].n_hosts, 2);
+});
+
+test('стёкла и корпуса тоже дают свидетельства, лампы — без света/AFS', () => {
+  const g = parseTitle('Стекло фары Toyota Camry V50 2011-2014 левое', 'x.ru');
+  assert.strictEqual(g.part_kind, 'glass');
+  assert.strictEqual(g.model, 'camry');
+  const l = parseTitle('Светодиодные лампы для фар Toyota Camry V50 2011-2014 LED', 'y.ru');
+  assert.strictEqual(l.light, null);
+  assert.strictEqual(l.afs, null);
+  assert.strictEqual(parseTitle('Лобовое стекло Toyota Camry 2011-2014', 'z.ru'), null);
+});
+
+test('Mark X 120 и Pajero Sport 3 — составные модели', () => {
+  assert.strictEqual(parseTitle('Переходные рамки Toyota Mark X 120 2004-2009', 'a.ru').model, 'mark-x');
+  assert.strictEqual(parseTitle('Переходные рамки Mitsubishi Pajero Sport 3 2015-2020', 'a.ru').model, 'pajero-sport');
+});

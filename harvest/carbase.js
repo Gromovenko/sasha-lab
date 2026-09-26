@@ -18,7 +18,7 @@ const TOL = 1;
 // Модели из нескольких слов: без списка «Land Cruiser Prado» стал бы моделью «land».
 const MULTI = ['land cruiser prado', 'land cruiser', 'range rover evoque', 'range rover sport', 'range rover',
   'grand cherokee', 'santa fe', 'grand vitara', 'grand scenic', 'x trail', 'cross country', 'model 3', 'model y',
-  'model s', 'model x', 'a class', 'c class', 'e class', 's class', 'g class', 'lancer evolution', 'mark ii'];
+  'model s', 'model x', 'a class', 'c class', 'e class', 's class', 'g class', 'lancer evolution', 'mark ii', 'mark x', 'pajero sport'];
 // «Tiggo 7», «CX 5», «RX 350»: название из слова и номера — одна модель, а не модель+поколение.
 const NAME_NUM = new Set(['cx', 'rx', 'nx', 'lx', 'gx', 'ux', 'tiggo', 'ix', 'qx', 'mx', 'cs', 'eq', 'ex', 'id', 'gl', 'glk', 'gla', 'glc', 'gle', 'gls', 'ml', 'x', 'jolion', 'coolray']);
 const SERIES = /^(серии|серия|series|класса|класс|class)$/i;
@@ -68,7 +68,11 @@ const normModel = (s) => s.toLowerCase().replace(/[^a-zа-яё0-9\s-]/gi, ' ').r
 
 // Заголовок каталога → наблюдение или null.
 function parseTitle(title, host) {
-  if (!title || !/рамк/i.test(title)) return null;
+  if (!title) return null;
+  // Любой товар фары с маркой/моделью/годами — свидетельство (не только рамки).
+  const pk = partOf(title).part_kind;
+  if (!pk) return null;
+  if (pk !== 'frame' && !/фар|оптик|линз|дхо|ангельск/i.test(title)) return null;
   // «Переходные рамки → Lynk & Co → 900» (vdf-light): марка и модель без годов.
   let t = String(title).replace(/&bull;|&amp;/g, ' ').replace(/:\s*цены.*$/i, '');
   const bc = t.split('→').map((x) => x.trim());
@@ -109,10 +113,22 @@ function parseTitle(title, host) {
   return {
     host, make, model: slugify(model) || model, gen: gen ? gen.replace(/\s+/g, '-').slice(0, 24) : null,
     year_from: yr ? yr.from : null, year_to: yr ? yr.to : null,
-    restyle: light.restyle, light: light.light, afs: light.afs, ...partOf(title),
+    restyle: light.restyle,
+    // Лампы и модули не описывают штатную фару: свет/AFS из их заголовка не берём.
+    light: (pk === 'lamp' || pk === 'module') ? null : light.light,
+    afs: (pk === 'lamp' || pk === 'module') ? null : light.afs, ...partOf(title),
   };
 }
 
+// Код кузова: V50 = XV50 (одно поколение), регистр и дефис не важны.
+const bodyOf = (gen) => {
+  for (const w of String(gen || '').toLowerCase().replace(/-/g, ' ').split(' ')) {
+    const m = /^x?([a-z]{1,2}\d{2,3})$/.exec(w);
+    if (m) return m[1];
+  }
+  return null;
+};
+const overlap = (a, b) => Math.min(a.year_to, b.year_to) >= Math.max(a.year_from, b.year_from);
 const agree = (a, b) => Math.abs(a.year_from - b.year_from) <= TOL && Math.abs(a.year_to - b.year_to) <= TOL;
 const mode = (arr) => {
   const c = new Map();
@@ -134,9 +150,10 @@ function consolidate(obs) {
     const withY = list.filter((o) => o.year_from != null).sort((a, b) => a.year_from - b.year_from || a.year_to - b.year_to);
     const clusters = [];
     for (const o of withY) {
-      const c = clusters.find((cl) => agree(cl.ref, o));
-      if (c) { c.items.push(o); c.ref = { year_from: mode(c.items.map((i) => i.year_from)), year_to: mode(c.items.map((i) => i.year_to)) }; }
-      else clusters.push({ items: [o], ref: { year_from: o.year_from, year_to: o.year_to } });
+      const bo = bodyOf(o.gen);
+      const c = clusters.find((cl) => agree(cl.ref, o) || (bo && cl.bodies.has(bo) && overlap(cl.ref, o)));
+      if (c) { c.items.push(o); if (bo) c.bodies.add(bo); c.ref = { year_from: mode(c.items.map((i) => i.year_from)), year_to: mode(c.items.map((i) => i.year_to)) }; }
+      else clusters.push({ items: [o], bodies: new Set(bodyOf(o.gen) ? [bodyOf(o.gen)] : []), ref: { year_from: o.year_from, year_to: o.year_to } });
     }
     for (const c of clusters) {
       const hosts = [...new Set(c.items.map((i) => i.host))].sort();
@@ -186,8 +203,7 @@ function consolidate(obs) {
 async function rebuild() {
   const rows = (await db.q(`
     SELECT s.host, d.url, d.title FROM documents d JOIN sources s ON s.id = d.source_id
-    WHERE d.skip_reason IS NULL AND d.title ~* 'рамк' AND s.host ~
-      '(nts-auto|bi-vision|daoptika|ledcar|aozoom-light|vdf-light|luxsar|criline|legal-xenon)'`));
+    WHERE d.skip_reason IS NULL AND d.title ~* 'рамк|стекл|корпус|набор|комплект|модул|ламп|линз'`));
   const obs = [];
   for (const r of rows) {
     const o = parseTitle(r.title, r.host.replace(/^www\./, ''));
@@ -235,5 +251,6 @@ const toCsv = (rows) => {
   return [cols.join(';')].concat(rows.map((r) => cols.map((c) => esc(r[c])).join(';'))).join('\n');
 };
 
-module.exports = { parseTitle, consolidate, rebuild, exportRows, toCsv, lightOf, partOf, years,
+module.exports = {
+  bodyOf, parseTitle, consolidate, rebuild, exportRows, toCsv, lightOf, partOf, years,
   MAKE_RE, MULTI, NAME_NUM, SERIES, normModel };
