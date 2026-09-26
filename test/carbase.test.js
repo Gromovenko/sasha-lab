@@ -6,9 +6,9 @@ test('разбор заголовков разных сайтов', () => {
   const a = parseTitle('Переходные рамки для BMW 3 серии Е91 (2008-2012) рестайлинг', 'legal-xenon.ru');
   assert.deepStrictEqual([a.make, a.model, a.year_from, a.year_to, a.restyle], ['bmw', '3', 2008, 2012, 'restyle']);
   const b = parseTitle('Переходные рамки Mazda 6 III (GJ) рестайл [2015-2018] EU LED AFS под линзы Hella 3r/5r, Би-Лед', 'criline.ru');
-  assert.deepStrictEqual([b.make, b.year_from, b.light, b.afs], ['mazda', 2015, 'led', true]);
+  assert.deepStrictEqual([b.make, b.year_from, b.light, b.afs], ['mazda', 2015, 'led', null]);
   const c = parseTitle('Переходные рамки для линз TOYOTA CAMRY V50 БЕЗ AFS 2011-2014', 'luxsar.ru');
-  assert.deepStrictEqual([c.model, c.gen, c.afs, c.year_to], ['camry', 'v50', false, 2014]);
+  assert.deepStrictEqual([c.model, c.gen, c.afs, c.year_to], ['camry', 'v50', null, 2014]);
   const d = parseTitle('Переходные рамки → Skoda → Kamiq: цены, большой каталог', 'vdf-light.ru');
   assert.deepStrictEqual([d.make, d.model, d.year_from], ['skoda', 'kamiq', null]);
 });
@@ -41,11 +41,11 @@ test('модели с номером не слипаются', () => {
   assert.strictEqual(parseTitle('Переходные рамки Saab 9-3 (2002-2007)', 'c.ru').model, '9-3');
 });
 
-test('AFS: нет слова = нет; вид детали и назначение хранятся', () => {
+test('AFS не определяется; вид детали и назначение хранятся', () => {
   const a = parseTitle('Переходные рамки для линз TOYOTA CAMRY V50 2011-2015 с AFS', 'luxsar.ru');
-  assert.deepStrictEqual([a.afs, a.part_kind, a.purpose], [true, 'frame', 'install_lens']);
+  assert.deepStrictEqual([a.afs, a.part_kind, a.purpose], [null, 'frame', 'install_lens']);
   const b = parseTitle('Переходные рамки для линз TOYOTA CAMRY V50 2011-2015', 'luxsar.ru');
-  assert.strictEqual(b.afs, false);
+  assert.strictEqual(b.afs, null);
   assert.strictEqual(require('../harvest/carbase').partOf('Стекло фары Toyota Camry').part_kind, 'glass');
 });
 

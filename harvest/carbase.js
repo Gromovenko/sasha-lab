@@ -5,7 +5,7 @@
 // Правило подтверждения: машина (марка + модель + годы) confirmed, только если
 // её видят минимум ДВА РАЗНЫХ сайта и годы у них совпали (допуск ±1 год: сайты
 // по-разному округляют «2010-2016» и «2010-2015»). Комплектации фары одной
-// машины (свет × AFS × рестайл) — не разные машины: они живут в car_variants
+// машины (свет × рестайл) — не разные машины: они живут в car_variants
 // со своим счётом источников.
 const db = require('../seo/lib/db');
 const { makeOf, slugify, MAKES } = require('./vehicles');
@@ -45,10 +45,8 @@ function lightOf(s) {
   if (/ксенон|xenon/i.test(t)) light = 'xenon';
   else if (/галоген|halogen/i.test(t)) light = 'halogen';
   else if (/(?<![A-Za-zА-Яа-я])(led|лед)(?![A-Za-zА-Яа-я])|светодиод/i.test(t)) light = 'led';
-  // Решение владельца 26.09.2026: слова про AFS нет — значит «без AFS». Только есть/нет.
-  let afs = false;
-  if (/без\s*afs|без\s*адаптив/i.test(t)) afs = false;
-  else if (/(?<![A-Za-z])afs(?![A-Za-z])|адаптив/i.test(t)) afs = true;
+  // AFS как признак комплектации НЕ определяем (решение владельца 26.09.2026: AFS вычтен).
+  const afs = null;
   let restyle = null;
   if (/до\s?рест|pre[-\s]?facelift/i.test(t)) restyle = 'pre';
   else if (/рестайл|рест(?![а-я])|facelift/i.test(t)) restyle = 'restyle';
@@ -116,7 +114,7 @@ function parseTitle(title, host) {
     restyle: light.restyle,
     // Лампы и модули не описывают штатную фару: свет/AFS из их заголовка не берём.
     light: (pk === 'lamp' || pk === 'module') ? null : light.light,
-    afs: (pk === 'lamp' || pk === 'module') ? null : light.afs, ...partOf(title),
+    afs: null, ...partOf(title),
   };
 }
 
@@ -178,7 +176,7 @@ function consolidate(obs) {
   for (const [, list] of byMM) {
     const mine = cars.filter((c) => c.make === list[0].make && c.model === list[0].model);
     for (const o of list) {
-      if (o.light == null && o.afs == null && o.restyle == null) continue;
+      if (o.light == null && o.restyle == null) continue;
       let best = null, bestOv = 0;
       for (const c of mine) {
         if (o.year_from == null || c.year_from == null) { if (mine.length === 1) best = c; continue; }
@@ -186,9 +184,9 @@ function consolidate(obs) {
         if (ov > bestOv) { bestOv = ov; best = c; }
       }
       if (!best) continue;
-      const vk = `${o.light}|${o.afs}|${o.restyle}`;
+      const vk = `${o.light}|${o.restyle}`;
       let v = best.variants.find((x) => x.key === vk);
-      if (!v) { v = { key: vk, light: o.light, afs: o.afs, restyle: o.restyle, hosts: new Set() }; best.variants.push(v); }
+      if (!v) { v = { key: vk, light: o.light, afs: null, restyle: o.restyle, hosts: new Set() }; best.variants.push(v); }
       v.hosts.add(o.host);
     }
   }
@@ -238,8 +236,7 @@ async function exportRows({ onlyConfirmed = true } = {}) {
   return (await db.q(`
     SELECT c.make, c.model, c.year_from, c.year_to, c.status, c.n_hosts, array_to_string(c.hosts, ' ') hosts,
       array_to_string(c.gens, ' ') gens,
-      (SELECT string_agg(concat_ws(' ', coalesce(v.light,'свет?'), CASE v.afs WHEN true THEN 'AFS' WHEN false THEN 'без AFS' END,
-          CASE v.restyle WHEN 'pre' THEN 'дорест' WHEN 'restyle' THEN 'рест' END, '[' || v.n_hosts || (CASE WHEN v.status='confirmed' THEN ' ✓' ELSE '' END) || ']'), '; ')
+      (SELECT string_agg(concat_ws(' ', coalesce(v.light,'свет?'),           CASE v.restyle WHEN 'pre' THEN 'дорест' WHEN 'restyle' THEN 'рест' END, '[' || v.n_hosts || (CASE WHEN v.status='confirmed' THEN ' ✓' ELSE '' END) || ']'), '; ')
          FROM car_variants v WHERE v.car_id = c.id) variants
     FROM cars c ${onlyConfirmed ? "WHERE c.status='confirmed'" : ''}
     ORDER BY c.make, c.model, c.year_from`));

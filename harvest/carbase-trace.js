@@ -39,9 +39,9 @@ function traceTitle(title, host = '') {
   add('3. Хвост после марки', 'всё, что стоит правее марки', rest.trim());
 
   const light = cb.lightOf(t);
-  add('4. Комплектация', 'слова «ксенон/галоген/LED», «AFS/адаптив», «рестайл»; «Bi-LED» вырезается (это линза, а не штатный свет)',
-    `свет=${light.light || '—'}, AFS=${light.afs ? 'есть' : 'нет'}, рестайл=${light.restyle || '—'}`,
-    light.afs ? '' : 'Слова про AFS нет → «нет» (правило владельца: отсутствие слова = без AFS).');
+  add('4. Комплектация', 'слова «ксенон/галоген/LED», «рестайл»; «Bi-LED» вырезается (это линза, а не штатный свет)',
+    `свет=${light.light || '—'}, рестайл=${light.restyle || '—'}`,
+    'AFS не определяется (исключён из правил решением владельца).');
 
   const yr = cb.years(t);
   add('5. Годы', 'шаблон «2011-2015», «11-15 г.в.», «2011-н.в.»',
@@ -86,7 +86,7 @@ function traceTitle(title, host = '') {
   add('9. Проверка модели', 'не пусто, не кириллица, не длиннее 24, не номер изделия', `«${slugify(m2) || m2}» — принято`);
   const out = cb.parseTitle(title, host);
   const mine = { make, model: slugify(m2) || m2, gen: gen ? gen.replace(/\s+/g, '-').slice(0, 24) : null,
-    year_from: yr ? yr.from : null, year_to: yr ? yr.to : null, restyle: light.restyle, light: light.light, afs: light.afs };
+    year_from: yr ? yr.from : null, year_to: yr ? yr.to : null, restyle: light.restyle, light: light.light, afs: null };
   const same = out && ['make', 'model', 'gen', 'year_from', 'year_to', 'restyle', 'light', 'afs'].every((k) => out[k] === mine[k]);
   add('10. Итог', 'запись наблюдения (car_obs)', JSON.stringify(out));
   return { title, host, steps, rejected: null, result: out, same: !!same };
@@ -99,7 +99,7 @@ module.exports = { traceTitle };
 const REFERENCE = {
   title: 'Переходные рамки для линз TOYOTA CAMRY V50 2011-2015 с AFS',
   host: 'luxsar.ru',
-  human: { make: 'toyota', model: 'camry', gen: 'v50', year_from: 2011, year_to: 2015, afs: true,
+  human: { make: 'toyota', model: 'camry', gen: 'v50', year_from: 2011, year_to: 2015,
     kind: 'рамка', purpose: 'установка линз' },
 };
 
@@ -113,8 +113,6 @@ function compare(human, res) {
   cmp('Код кузова', human.gen, r.gen, 'код берётся из остатка после модели; нормализации V50 = XV50 нет, склейка идёт только по годам');
   cmp('Год от', human.year_from, r.year_from, 'шаблон годов не сработал');
   cmp('Год до', human.year_to, r.year_to, 'шаблон годов не сработал');
-  cmp('AFS', human.afs ? 'есть' : 'нет', r.afs ? 'есть' : 'нет',
-    'слово «AFS»/«адаптив» не найдено');
   const KIND = { frame: 'рамка', glass: 'стекло', housing: 'корпус', kit: 'набор', module: 'модуль', lamp: 'лампа' };
   const gotKind = KIND[r.part_kind] || 'не определён';
   rows.push({ label: 'Вид детали', want: human.kind, got: gotKind, ok: gotKind === human.kind, why: 'вид детали берётся по слову в заголовке (carbase.js partOf)' });

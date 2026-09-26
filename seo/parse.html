@@ -24,10 +24,10 @@ details{margin:6px 0}summary{cursor:pointer;font-weight:600}
 <div id="out"></div>
 <div class="card" id="rules"><h2>Общие правила и слабые места</h2>
 <ol>
-<li><b>Один заголовок — одно наблюдение.</b> Из строки вынимаются марка, модель, код кузова, годы и комплектация (свет, AFS, рестайл). Ничего не достраивается.</li>
+<li><b>Один заголовок — одно наблюдение.</b> Из строки вынимаются марка, модель, код кузова, годы и комплектация (свет, рестайл). Ничего не достраивается.</li>
 <li><b>Модель — первое слово после марки.</b> Исключения — список многословных («Land Cruiser Prado») и пары «слово+номер» («CX-5», «Tiggo 7»). Редкая двухсловная модель может распасться.</li>
 <li><b>Код кузова</b> — латинские слова из 1–6 знаков после модели. Написания «V50» и «XV50» считаются разными.</li>
-<li><b>«Нет слова про AFS» значит «нет AFS».</b> AFS хранится только как «есть» или «нет».</li>
+<li><b>AFS не разбирается.</b> Признак исключён из правил: комплектация — свет и рестайл.</li>
 <li><b>Годы</b> из заголовка. У сайтов границы поколения расходятся (2011–2014 и 2011–2015), поэтому при сведении допуск ±1 год.</li>
 <li><b>Подтверждение</b> машины — минимум два разных сайта с совпавшими годами. Комплектация считается отдельно, свой счёт источников.</li>
 <li><b>Вид детали не хранится.</b> В базу авто идут только рамки; стёкла, корпуса, наборы и лампы не учитываются.</li>
@@ -49,8 +49,8 @@ function marked(title,r){
 function trace(d){
   const r=d.result;
   return `<div class="card"><h2>1. Что вынул код</h2><div class="big">${marked(d.title,r)}</div>
-  <p class="legend"><span class="hl f-make">марка, модель</span><span class="hl f-gen">код кузова</span><span class="hl f-year">годы</span><span class="hl f-afs">AFS</span><span class="hl f-kind">вид детали</span></p>
-  ${d.rejected?`<p class="bad">Заголовок отброшен: ${esc(d.rejected)}</p>`:`<p>${r?`<span class="chip g">${esc(r.make)}</span><span class="chip g">${esc(r.model)}</span>${r.gen?`<span class="chip g">кузов ${esc(r.gen)}</span>`:'<span class="chip y">кузов —</span>'}${r.year_from?`<span class="chip g">${r.year_from}–${r.year_to}</span>`:'<span class="chip y">годов нет</span>'}<span class="chip ${r.afs===true?'g':'y'}">AFS: ${r.afs===null?'неизвестно':r.afs?'есть':'нет'}</span>${r.light?`<span class="chip g">свет: ${esc(r.light)}</span>`:''}${r.restyle?`<span class="chip g">${esc(r.restyle)}</span>`:''}`:''}</p>`}
+  <p class="legend"><span class="hl f-make">марка, модель</span><span class="hl f-gen">код кузова</span><span class="hl f-year">годы</span><span class="hl f-kind">вид детали</span></p>
+  ${d.rejected?`<p class="bad">Заголовок отброшен: ${esc(d.rejected)}</p>`:`<p>${r?`<span class="chip g">${esc(r.make)}</span><span class="chip g">${esc(r.model)}</span>${r.gen?`<span class="chip g">кузов ${esc(r.gen)}</span>`:'<span class="chip y">кузов —</span>'}${r.year_from?`<span class="chip g">${r.year_from}–${r.year_to}</span>`:'<span class="chip y">годов нет</span>'}${r.light?`<span class="chip g">свет: ${esc(r.light)}</span>`:''}${r.restyle?`<span class="chip g">${esc(r.restyle)}</span>`:''}`:''}</p>`}
   ${d.same?'':'<p class="bad">Внимание: трассировка расходится с боевым parseTitle.</p>'}</div>
   <div class="card"><h2>2. Шаги разбора</h2><div class="steps">${d.steps.map(s=>`<div class="step"><div><b>${esc(s.name)}</b></div><div><div class="sub">${esc(s.rule)}</div><div class="mono">${esc(s.out)}</div>${s.note?`<div class="note">${esc(s.note)}</div>`:''}</div></div>`).join('')}</div></div>`;
 }
@@ -63,15 +63,15 @@ function pathBlock(p){
   return `<div class="card"><h2>4. Путь записи по базе (живые данные)</h2>
   <div class="steps">
   <div class="step"><div><b>Шаг 1. Страница</b></div><div>${p.docs.length?p.docs.map(d=>`<div class="mono">${esc(d.host)} · ${esc(d.url)} · код ${d.http_status}</div>`).join(''):'<div class="note">Такой заголовок в собранных страницах не найден.</div>'}</div></div>
-  <div class="step"><div><b>Шаг 2. Наблюдения</b></div><div class="sub">Строки <code>car_obs</code> по этой машине и близким годам: каждый сайт — своя строка.</div><table><tr><th>Сайт</th><th>Кузов</th><th>Годы</th><th>AFS</th></tr>${p.obs.map(o=>`<tr><td>${esc(o.host)}</td><td>${esc(o.gen||'—')}</td><td>${o.year_from?o.year_from+'–'+o.year_to:'—'}</td><td>${o.afs===null?'?':o.afs?'есть':'нет'}</td></tr>`).join('')||'<tr><td colspan=4>нет</td></tr>'}</table></div>
+  <div class="step"><div><b>Шаг 2. Наблюдения</b></div><div class="sub">Строки <code>car_obs</code> по этой машине и близким годам: каждый сайт — своя строка.</div><table><tr><th>Сайт</th><th>Кузов</th><th>Годы</th></tr>${p.obs.map(o=>`<tr><td>${esc(o.host)}</td><td>${esc(o.gen||'—')}</td><td>${o.year_from?o.year_from+'–'+o.year_to:'—'}</td></tr>`).join('')||'<tr><td colspan=3>нет</td></tr>'}</table></div>
   <div class="step"><div><b>Шаг 3. Машина</b></div><div class="sub">Наблюдения склеены по совпавшим годам (допуск ±1). Подтверждение — от двух сайтов.</div><table><tr><th>Годы</th><th>Кузова</th><th>Сайты, подтвердившие годы</th><th>Статус</th></tr>${p.cars.map(c=>`<tr><td>${c.year_from?c.year_from+'–'+c.year_to:'—'}</td><td>${esc((c.gens||[]).join(', ')||'—')}</td><td>${esc((c.hosts||[]).join(', ')||'—')} (${c.n_hosts})</td><td>${st(c.status)}</td></tr>`).join('')}</table></div>
-  <div class="step"><div><b>Шаг 4. Комплектации</b></div><div class="sub">Свет × AFS × рестайл, у каждой свой счёт сайтов.</div><table><tr><th>Машина</th><th>Свет</th><th>AFS</th><th>Рестайл</th><th>Сайты</th></tr>${p.variants.map(v=>{const c=p.cars.find(c=>c.id===v.car_id);return`<tr><td>${c?c.year_from+'–'+c.year_to:''}</td><td>${esc(v.light||'?')}</td><td>${v.afs===null?'?':v.afs?'есть':'нет'}</td><td>${esc(v.restyle||'—')}</td><td>${(v.hosts||[]).length} · ${st(v.status)}</td></tr>`}).join('')||'<tr><td colspan=5>нет</td></tr>'}</table></div>
+  <div class="step"><div><b>Шаг 4. Комплектации</b></div><div class="sub">Свет × рестайл, у каждой свой счёт сайтов.</div><table><tr><th>Машина</th><th>Свет</th><th>Рестайл</th><th>Сайты</th></tr>${p.variants.map(v=>{const c=p.cars.find(c=>c.id===v.car_id);return`<tr><td>${c?c.year_from+'–'+c.year_to:''}</td><td>${esc(v.light||'?')}</td><td>${esc(v.restyle||'—')}</td><td>${(v.hosts||[]).length} · ${st(v.status)}</td></tr>`}).join('')||'<tr><td colspan=4>нет</td></tr>'}</table></div>
   <div class="step"><div><b>Шаг 5. Карточка /karta</b></div><div>${p.karta&&p.karta.title?`<div class="mono">${esc(p.karta.title)} · годы ${esc(p.karta.years.join('–'))}</div><p class="sub">Годы карточки берутся из базы авто, если она знает модель.</p>`:'<div class="note">Карточка не найдена.</div>'}<p><a href="/karta?make=toyota&model=camry&year=2012">Открыть /karta для Camry 2012</a></p></div></div>
   </div></div>`;
 }
 function samplesBlock(list){
   return `<div class="card"><h2>5. Десять заголовков разных типов</h2><p class="sub">Случайные заголовки из базы: с годами и без, с AFS и без, стекло вместо рамки, две машины в заголовке. Нажмите строку, чтобы открыть шаги.</p>
-  ${list.map(s=>{const r=s.result;return`<details><summary>${esc(s.label)}: ${r?`<span class="ok">принят</span> · ${esc(r.make)} ${esc(r.model)} ${r.gen?esc(r.gen):''} ${r.year_from?r.year_from+'–'+r.year_to:'без годов'} · AFS ${r.afs===null?'?':r.afs?'есть':'нет'}`:`<span class="bad">отброшен</span> · ${esc(s.rejected||'')}`}</summary><div class="mono" style="margin:6px 0">${esc(s.title)}</div>
+  ${list.map(s=>{const r=s.result;return`<details><summary>${esc(s.label)}: ${r?`<span class="ok">принят</span> · ${esc(r.make)} ${esc(r.model)} ${r.gen?esc(r.gen):''} ${r.year_from?r.year_from+'–'+r.year_to:'без годов'}`:`<span class="bad">отброшен</span> · ${esc(s.rejected||'')}`}</summary><div class="mono" style="margin:6px 0">${esc(s.title)}</div>
   <table>${s.steps.slice(1).map(x=>`<tr><td style="width:170px">${esc(x.name)}</td><td class="mono">${esc(x.out)}${x.note?`<div class="note">${esc(x.note)}</div>`:''}</td></tr>`).join('')}</table></details>`}).join('')}</div>`;
 }
 async function run(){
