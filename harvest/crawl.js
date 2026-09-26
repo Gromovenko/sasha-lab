@@ -3,6 +3,8 @@
 // Sitemap предпочтителен не из вежливости, а из точности: он даёт список
 // страниц, которые сам сайт считает содержательными, без служебных фильтров
 // каталога и пагинации, на которых обычный краулер тратит сотни запросов.
+const fs = require('fs');
+const path = require('path');
 const http = require('./http');
 const html = require('./html');
 const store = require('./store');
@@ -145,6 +147,13 @@ async function crawlTitles(src, { row, entries, max, onDoc, stat }) {
 // Основной заход по одному источнику.
 // Возвращает { host, fetched, saved, skipped, robots, errors }.
 async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
+  // Остывание после блокировки: пока не прошло, площадку не трогаем вовсе —
+  // повторные заходы в бан (очередь, крон, ручной запуск) его только продлевают.
+  const cd = cooldownLeft(src.host);
+  if (cd > 0) {
+    console.warn(`  ⏸ ${src.host}: остывание после блокировки, ещё ${Math.ceil(cd / 60000)} мин — пропуск`);
+    return { host: src.host, fetched: 0, saved: 0, offtopic: 0, robots: 0, errors: 0, listed: 0, cooldown: true };
+  }
   const row = await store.ensureSource(src);
   const max = Math.min(limit || src.maxPages || 200, src.maxPages || 200);
   const stat = { host: src.host, fetched: 0, saved: 0, offtopic: 0, robots: 0, errors: 0, listed: 0 };
@@ -244,6 +253,13 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
         try { r = await http.get(url, { delayMs: src.delayMs, ua: src.ua }); }
         catch (e) { stat.errors += 1; continue; }
         if (r.skipped === 'robots') { stat.robots += 1; continue; }
+        // 403 на странице при живом robots.txt — бан по IP (vdf-light 26.09.2026).
+        // Штрафом его не вылечить: сразу стоп, без единого повторного запроса.
+        if (r.status === 403 && src.stopOn403) {
+          stat.errors += 1; stat.blocked = true; stop = true;
+          console.warn(`  ⛔ ${src.host}: 403 — вероятный бан по IP, заход прерван`);
+          return;
+        }
         if (r.status === 429 || r.status === 503) {
           stat.errors += 1;
           const atMax = (http.penalty.get(new URL(url).hostname) || 0) >= 60000;
@@ -260,6 +276,12 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
         if (r.status === 404 || r.status === 410) { stat.errors += 1; await remember404(url, r.status); continue; }
         if (r.status !== 200) { stat.errors += 1; continue; }
         await handle(url, r.body);
+        // Бюджет за заход: лимитер площадки накопительный (~250–300 страниц
+        // и бан), поэтому берём заведомо меньше и не доводим до порога.
+        if (src.runBudget && stat.saved >= src.runBudget) {
+          console.warn(`  ⏹ ${src.host}: бюджет захода ${src.runBudget} стр. выбран — дальше в следующий раз`);
+          stop = true; return;
+        }
       }
     };
     const par = Math.max(1, Math.min(FETCH_PAR, src.fetchPar || FETCH_PAR, list.length));
@@ -268,9 +290,27 @@ async function crawlSource(src, { limit, refetch = false, onDoc } = {}) {
     await walk(src, max, async (url, body) => { if (!known.has(url)) await handle(url, body); });
   }
 
+  if (stat.blocked) armCooldown(src); else clearStrikes(src.host);
   await store.touchSource(row.id);
   return stat;
 }
+
+// Остывание хранится файлом на диске: переживает рестарт и общий для всех
+// способов запуска. Каждая новая блокировка подряд удваивает срок (до 72 ч).
+const CD_DIR = process.env.HARVEST_COOLDOWN_DIR || '/var/tmp/sashalab-cooldown';
+const cdFile = (h) => path.join(CD_DIR, h + '.json');
+function readCd(h) { try { return JSON.parse(fs.readFileSync(cdFile(h), 'utf8')); } catch { return null; } }
+function cooldownLeft(host) { const c = readCd(host); return c ? Math.max(0, c.until - Date.now()) : 0; }
+function armCooldown(src) {
+  const strikes = ((readCd(src.host) || {}).strikes || 0) + 1;
+  const hours = Math.min(72, (src.cooldownH || 6) * 2 ** (strikes - 1));
+  try {
+    fs.mkdirSync(CD_DIR, { recursive: true });
+    fs.writeFileSync(cdFile(src.host), JSON.stringify({ until: Date.now() + hours * 3600e3, strikes }));
+    console.warn(`  ⏸ ${src.host}: остывание ${hours} ч (блокировок подряд: ${strikes})`);
+  } catch (e) { console.warn('  не записал остывание:', e.message); }
+}
+function clearStrikes(host) { try { fs.unlinkSync(cdFile(host)); } catch {} }
 
 const STALL_LIMIT = Number(process.env.HARVEST_STALL_LIMIT) || 5;
 // Сколько запросов к ОДНОМУ источнику держим в воздухе одновременно. Частоту
@@ -278,4 +318,4 @@ const STALL_LIMIT = Number(process.env.HARVEST_STALL_LIMIT) || 5;
 // ответа. Три — потолок, дальше упираемся в паузу, а не в сеть.
 const FETCH_PAR = Math.max(1, Math.min(3, Number(process.env.HARVEST_FETCH_PAR) || 3));
 
-module.exports = { crawlSource, sitemapUrls, walk, titleFromUrl, TOPIC };
+module.exports = { cooldownLeft, armCooldown, clearStrikes, crawlSource, sitemapUrls, walk, titleFromUrl, TOPIC };

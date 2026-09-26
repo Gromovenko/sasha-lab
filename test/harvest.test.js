@@ -445,3 +445,20 @@ test('electro-kot: пометка with Xenon в заголовке даёт шт
   const c = facts.parseDoc(doc('Светодиодные лампы для Toyota C-HR 2016-2019 в Ближний свет'));
   assert.equal(c.fitment.length, 0);
 });
+
+test('остывание после блокировки: записывается, удваивается, снимается', () => {
+  const os = require('os'), fsx = require('fs'), pathx = require('path');
+  process.env.HARVEST_COOLDOWN_DIR = pathx.join(os.tmpdir(), 'cd-' + process.pid);
+  delete require.cache[require.resolve('../harvest/crawl.js')];
+  const c = require('../harvest/crawl.js');
+  const src = { host: 'x.test', cooldownH: 12 };
+  assert.equal(c.cooldownLeft('x.test'), 0);
+  c.armCooldown(src);
+  const first = c.cooldownLeft('x.test');
+  assert.ok(first > 11.9 * 3600e3 && first <= 12 * 3600e3);
+  c.armCooldown(src);
+  assert.ok(c.cooldownLeft('x.test') > 23.9 * 3600e3);
+  c.clearStrikes('x.test');
+  assert.equal(c.cooldownLeft('x.test'), 0);
+  fsx.rmSync(process.env.HARVEST_COOLDOWN_DIR, { recursive: true, force: true });
+});

@@ -56,7 +56,12 @@ const SOURCES = [
     // нагрузку он не видит. Поэтому пауза здесь 1000 мс, как у всех, а защитой
     // работает штраф в загрузчике: первый же 429 удваивает паузу до конца захода
     // (см. sasha-lab-harvest-vdf-ratelimit.md и harvest/http.js).
-    delayMs: 1000, maxPages: 8600 },
+    // 26.09.2026: третий бан за неделю. Заход при паузе 1 с и трёх запросах
+    // внахлёст взял 265 стр. и упёрся в 429, затем IP получил 403 даже на «/»
+    // (robots.txt при этом отдаётся). Порог накопительный ≈250–300 стр., поэтому:
+    // пауза 6 с, один запрос за раз, не больше 120 стр. за заход, 403 = стоп,
+    // после блокировки остывание ≥12 ч с удвоением (harvest/crawl.js).
+    delayMs: 6000, fetchPar: 1, runBudget: 120, stopOn403: true, cooldownH: 12, maxPages: 8600 },
   { host: 'www.criline.ru', kind: 'parts', title: 'Criline',
     seeds: ['https://www.criline.ru/'], include: /./, delayMs: 1000, maxPages: 10100 },
   { host: 'steklafar.ru', kind: 'parts', title: 'Стёкла фар',
