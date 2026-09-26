@@ -112,9 +112,9 @@
  // карточка одна; строки только с данными, у каждой — список ссылок на источники
  function card(c,yr){
   var years=c.year_from?(c.year_from+'–'+(c.year_to||'н.в.')):'';
-  var SHOW={4:1,5:1,6:1,12:1};
-  var rows=c.items.filter(function(i){return SHOW[i.n];}).map(function(i){
-   return '<tr><td class="n">'+i.n+'</td><td class="l">'+esc(i.label)+'</td><td><b>'+esc(i.value)+'</b>'+(i.rows&&i.rows.length?spots(i.rows):i.cols?glass(i.cols):links(i.links))+'</td></tr>';
+  var ORDER=[6,4,12,5];
+  var rows=ORDER.map(function(n){return c.items.filter(function(i){return i.n===n;})[0];}).filter(Boolean).map(function(i){
+   return '<tr><td class="l">'+esc(i.label)+'</td><td><b>'+esc(i.value)+'</b>'+(i.rows&&i.rows.length?spots(i.rows):i.cols?glass(i.cols):links(i.links))+'</td></tr>';
   }).join('');
   return '<div class="card"><div class="head"><b>'+esc(cap(c.make))+' '+esc(cap(c.model))+'</b>'+
    '<span>'+years+'</span></div>'+
